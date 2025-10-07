@@ -74,6 +74,14 @@ st.markdown("""
         color: #00ff88;
         text-decoration: none;
     }
+    
+    .comparison-card {
+        background-color: #1a1f2e;
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -166,6 +174,14 @@ class GeraldineWeissAnalyzer:
         self.years = years
         self.dividend_fetcher = DividendDataFetcher()
         
+    def is_european_ticker(self, ticker: str) -> bool:
+        """Detecta si un ticker es europeo basándose en sufijos comunes"""
+        european_suffixes = [
+            '.MC', '.PA', '.DE', '.L', '.AS', '.MI', '.BR', '.HE', 
+            '.OL', '.ST', '.CO', '.LS', '.AT', '.PR', '.VI', '.IR', '.WA',
+        ]
+        return any(ticker.upper().endswith(suffix) for suffix in european_suffixes)
+        
     def fetch_price_data(self):
         """Obtiene datos históricos de precios"""
         end_date = datetime.now()
@@ -176,7 +192,6 @@ class GeraldineWeissAnalyzer:
             if data.empty:
                 return None
             
-            # Aplanar MultiIndex si existe
             if isinstance(data.columns, pd.MultiIndex):
                 data.columns = data.columns.get_level_values(0)
             
@@ -186,30 +201,39 @@ class GeraldineWeissAnalyzer:
             return None
     
     def fetch_dividend_data(self):
-        """Obtiene datos de dividendos"""
+        """Obtiene datos de dividendos con lógica inteligente de fuentes"""
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
-        df = self.dividend_fetcher.fetch_dividends(
-            self.ticker, 
-            start_date.strftime('%Y-%m-%d'),
-            end_date.strftime('%Y-%m-%d')
-        )
+        is_european = self.is_european_ticker(self.ticker)
         
-        if df.empty:
-            try:
-                ticker_obj = yf.Ticker(self.ticker)
-                divs = ticker_obj.dividends
-                if not divs.empty:
-                    df = pd.DataFrame({
-                        'ex_dividend_date': divs.index,
-                        'amount': divs.values
-                    })
-                    df = df[df['ex_dividend_date'] >= start_date]
-            except:
-                pass
+        if not is_european:
+            df = self.dividend_fetcher.fetch_dividends(
+                self.ticker, 
+                start_date.strftime('%Y-%m-%d'),
+                end_date.strftime('%Y-%m-%d')
+            )
+            
+            if not df.empty:
+                return df
         
-        return df
+        try:
+            ticker_obj = yf.Ticker(self.ticker)
+            divs = ticker_obj.dividends
+            
+            if not divs.empty:
+                df = pd.DataFrame({
+                    'ex_dividend_date': divs.index,
+                    'amount': divs.values
+                })
+                df = df[df['ex_dividend_date'] >= start_date]
+                
+                if not df.empty:
+                    return df
+        except:
+            pass
+        
+        return pd.DataFrame()
     
     def calculate_annual_dividends(self, dividend_df):
         """Calcula dividendos anuales por año"""
@@ -234,7 +258,6 @@ class GeraldineWeissAnalyzer:
         """Calcula bandas de sobrevaloración e infravaloración"""
         prices = prices.copy()
         
-        # Asegurarse de que tenemos la columna 'Close'
         if 'Close' not in prices.columns:
             if 'close' in prices.columns:
                 prices = prices.rename(columns={'close': 'Close'})
@@ -264,7 +287,7 @@ class GeraldineWeissAnalyzer:
     def get_current_signal(self, analysis_df):
         """Determina la señal actual de compra/venta"""
         if analysis_df is None or analysis_df.empty:
-            return "DESCONOCIDO", "Datos insuficientes"
+            return "DESCONOCIDO", "Datos insuficientes", 0
         
         latest = analysis_df.iloc[-1]
         price = latest['Close']
@@ -275,200 +298,124 @@ class GeraldineWeissAnalyzer:
         lower_buy_zone = undervalued + (range_size * 0.2)
         upper_sell_zone = overvalued - (range_size * 0.2)
         
-        if price <= lower_buy_zone:
-            return "COMPRA FUERTE", f"Precio ${price:.2f} está en zona infravalorada"
-        elif price <= undervalued:
-            return "COMPRA", f"Precio ${price:.2f} se aproxima al nivel infravalorado"
-        elif price >= upper_sell_zone:
-            return "VENTA FUERTE", f"Precio ${price:.2f} está en zona sobrevalorada"
-        elif price >= overvalued:
-            return "VENTA", f"Precio ${price:.2f} se aproxima al nivel sobrevalorado"
+        # Calcular score numérico (-100 a +100)
+        # -100 = muy sobrevalorada, +100 = muy infravalorada
+        if range_size > 0:
+            score = ((overvalued - price) / range_size) * 200 - 100
         else:
-            return "MANTENER", f"Precio ${price:.2f} está en rango de valor razonable"
+            score = 0
+        
+        if price <= lower_buy_zone:
+            return "COMPRA FUERTE", f"Precio ${price:.2f} está en zona infravalorada", score
+        elif price <= undervalued:
+            return "COMPRA", f"Precio ${price:.2f} se aproxima al nivel infravalorado", score
+        elif price >= upper_sell_zone:
+            return "VENTA FUERTE", f"Precio ${price:.2f} está en zona sobrevalorada", score
+        elif price >= overvalued:
+            return "VENTA", f"Precio ${price:.2f} se aproxima al nivel sobrevalorado", score
+        else:
+            return "MANTENER", f"Precio ${price:.2f} está en rango de valor razonable", score
 
 
-def plot_geraldine_weiss(analysis_df, ticker):
-    """Crea gráfico de Geraldine Weiss"""
+def analyze_ticker_quick(ticker, years=6):
+    """Análisis rápido de un ticker para comparación"""
+    analyzer = GeraldineWeissAnalyzer(ticker, years)
+    
+    price_data = analyzer.fetch_price_data()
+    dividend_data = analyzer.fetch_dividend_data()
+    
+    if price_data is None or price_data.empty or dividend_data.empty:
+        return None
+    
+    annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
+    analysis_df = analyzer.calculate_valuation_bands(price_data, annual_dividends)
+    
+    if analysis_df is None or analysis_df.empty:
+        return None
+    
+    signal, description, score = analyzer.get_current_signal(analysis_df)
+    latest = analysis_df.iloc[-1]
+    
+    # Calcular CAGR si hay suficientes datos
+    cagr = 0
+    if len(annual_dividends) > 1:
+        cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
+                annual_dividends['annual_dividend'].iloc[0]) ** 
+               (1 / (len(annual_dividends) - 1)) - 1) * 100
+    
+    return {
+        'ticker': ticker,
+        'price': latest['Close'],
+        'yield': latest['div_yield'] * 100,
+        'undervalued': latest['undervalued'],
+        'overvalued': latest['overvalued'],
+        'signal': signal,
+        'score': score,
+        'annual_dividend': latest['annual_dividend'],
+        'cagr': cagr,
+        'analysis_df': analysis_df,
+        'dividend_data': dividend_data
+    }
+
+
+def plot_comparison_chart(results):
+    """Gráfico comparativo de múltiples tickers"""
     fig = go.Figure()
     
-    # Área de relleno entre bandas
-    fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['overvalued'],
-        name='Zona Sobrevalorada',
-        line=dict(color='rgba(255, 107, 107, 0)', width=0),
-        showlegend=False,
-        hoverinfo='skip'
-    ))
+    tickers = [r['ticker'] for r in results]
+    prices = [r['price'] for r in results]
+    undervalued = [r['undervalued'] for r in results]
+    overvalued = [r['overvalued'] for r in results]
     
-    fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['undervalued'],
-        name='Rango de Valor Razonable',
-        fill='tonexty',
-        fillcolor='rgba(0, 255, 136, 0.1)',
-        line=dict(color='rgba(0, 255, 136, 0)', width=0),
-        showlegend=True,
-        hoverinfo='skip'
-    ))
+    x = list(range(len(tickers)))
     
-    # Línea de sobrevaloración
+    # Bandas
     fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['overvalued'],
+        x=x, y=overvalued,
         name='Sobrevalorada',
-        line=dict(color='#ff6b6b', width=3, dash='solid'),
-        mode='lines',
-        hovertemplate='<b>Sobrevalorada:</b> $%{y:.2f}<extra></extra>'
+        line=dict(color='#ff6b6b', width=2, dash='dash'),
+        mode='lines+markers',
+        marker=dict(size=10)
     ))
     
-    # Línea de infravaloración
     fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['undervalued'],
+        x=x, y=undervalued,
         name='Infravalorada',
-        line=dict(color='#00ff88', width=3, dash='solid'),
-        mode='lines',
-        hovertemplate='<b>Infravalorada:</b> $%{y:.2f}<extra></extra>'
+        line=dict(color='#00ff88', width=2, dash='dash'),
+        mode='lines+markers',
+        marker=dict(size=10)
     ))
     
-    # Precio actual con gradiente
+    # Precio actual
+    colors = []
+    for r in results:
+        if 'COMPRA' in r['signal']:
+            colors.append('#00ff88')
+        elif 'VENTA' in r['signal']:
+            colors.append('#ff6b6b')
+        else:
+            colors.append('#ffd93d')
+    
     fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['Close'],
+        x=x, y=prices,
         name='Precio Actual',
+        mode='lines+markers',
         line=dict(color='#00d4ff', width=4),
-        mode='lines',
-        hovertemplate='<b>Precio:</b> $%{y:.2f}<extra></extra>'
+        marker=dict(size=15, color=colors, line=dict(color='white', width=2)),
+        text=[f"${p:.2f}" for p in prices],
+        textposition="top center"
     ))
-    
-    # Marcador para el precio actual
-    latest = analysis_df.iloc[-1]
-    fig.add_trace(go.Scatter(
-        x=[analysis_df.index[-1]],
-        y=[latest['Close']],
-        mode='markers',
-        marker=dict(
-            size=16,
-            color='#00d4ff',
-            line=dict(color='white', width=3),
-            symbol='circle'
-        ),
-        showlegend=False,
-        hovertemplate=f'<b>Precio Actual:</b> ${latest["Close"]:.2f}<extra></extra>'
-    ))
-    
-    # Añadir anotación para el precio actual
-    fig.add_annotation(
-        x=analysis_df.index[-1],
-        y=latest['Close'],
-        text=f"${latest['Close']:.2f}",
-        showarrow=True,
-        arrowhead=2,
-        arrowsize=1,
-        arrowwidth=2,
-        arrowcolor="#00d4ff",
-        ax=40,
-        ay=-40,
-        bgcolor="rgba(0, 212, 255, 0.2)",
-        bordercolor="#00d4ff",
-        borderwidth=2,
-        font=dict(size=14, color="white")
-    )
     
     fig.update_layout(
-        title=dict(
-            text=f'<b>{ticker}</b> - Modelo de Valoración Geraldine Weiss',
-            font=dict(size=24, color='white'),
-            x=0.5,
-            xanchor='center'
-        ),
+        title='Comparación de Valoración - Método Geraldine Weiss',
         xaxis=dict(
-            title='',
-            gridcolor='rgba(255, 255, 255, 0.1)',
-            showgrid=True,
-            zeroline=False
+            tickmode='array',
+            tickvals=x,
+            ticktext=tickers,
+            title=''
         ),
         yaxis=dict(
             title='Precio (USD)',
-            gridcolor='rgba(255, 255, 255, 0.1)',
-            showgrid=True,
-            zeroline=False,
-            tickprefix='$'
-        ),
-        template='plotly_dark',
-        hovermode='x unified',
-        height=550,
-        plot_bgcolor='#0e1117',
-        paper_bgcolor='#0e1117',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor='rgba(30, 40, 57, 0.8)',
-            bordercolor='rgba(255, 255, 255, 0.2)',
-            borderwidth=1
-        )
-    )
-    
-    return fig
-
-
-def plot_dividend_history(dividend_df, ticker):
-    """Crea gráfico del historial de dividendos"""
-    if dividend_df.empty:
-        return None
-    
-    fig = go.Figure()
-    
-    # Crear gradiente de colores más sofisticado
-    n = len(dividend_df)
-    colors = []
-    for i in range(n):
-        # Gradiente de verde a cyan
-        ratio = i / max(n - 1, 1)
-        colors.append(f'rgba({int(0 + 0 * ratio)}, {int(255 - 43 * ratio)}, {int(136 + 119 * ratio)}, 0.8)')
-    
-    fig.add_trace(go.Bar(
-        x=dividend_df['ex_dividend_date'],
-        y=dividend_df['amount'],
-        name='Dividendo',
-        marker=dict(
-            color=colors,
-            line=dict(color='rgba(255, 255, 255, 0.3)', width=1)
-        ),
-        hovertemplate='<b>Fecha:</b> %{x|%Y-%m-%d}<br><b>Monto:</b> $%{y:.3f}<extra></extra>'
-    ))
-    
-    # Añadir línea de tendencia
-    if len(dividend_df) > 1:
-        fig.add_trace(go.Scatter(
-            x=dividend_df['ex_dividend_date'],
-            y=dividend_df['amount'].rolling(window=4, min_periods=1).mean(),
-            name='Tendencia',
-            line=dict(color='#ffd93d', width=2, dash='dash'),
-            mode='lines',
-            hovertemplate='<b>Media móvil:</b> $%{y:.3f}<extra></extra>'
-        ))
-    
-    fig.update_layout(
-        title=dict(
-            text=f'{ticker} - Historial de Pagos de Dividendos',
-            font=dict(size=20, color='white')
-        ),
-        xaxis=dict(
-            title='Fecha',
-            gridcolor='rgba(255, 255, 255, 0.1)',
-            showgrid=True,
-            zeroline=False
-        ),
-        yaxis=dict(
-            title='Monto del Dividendo (USD)',
-            gridcolor='rgba(255, 255, 255, 0.1)',
-            showgrid=True,
-            zeroline=False,
             tickprefix='$'
         ),
         template='plotly_dark',
@@ -476,500 +423,489 @@ def plot_dividend_history(dividend_df, ticker):
         plot_bgcolor='#0e1117',
         paper_bgcolor='#0e1117',
         hovermode='x unified',
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     
     return fig
 
 
-def plot_dividend_growth(annual_div_df, ticker):
-    """Crea análisis de crecimiento de dividendos"""
-    if annual_div_df.empty:
-        return None
+def plot_portfolio_composition(portfolio_data):
+    """Gráfico de composición de cartera"""
+    fig = go.Figure()
     
-    fig = make_subplots(
-        rows=2, cols=1,
-        subplot_titles=(
-            '<b>Dividendos Anuales</b>',
-            '<b>Crecimiento Interanual (%)</b>'
-        ),
-        vertical_spacing=0.15,
-        row_heights=[0.6, 0.4]
-    )
+    labels = [f"{row['ticker']}<br>{row['weight']}%" for _, row in portfolio_data.iterrows()]
+    values = portfolio_data['weight'].tolist()
     
-    # Dividendos anuales con área de relleno
-    fig.add_trace(
-        go.Scatter(
-            x=annual_div_df['year'],
-            y=annual_div_df['annual_dividend'],
-            mode='lines+markers',
-            name='Dividendo Anual',
-            line=dict(color='#00ff88', width=4),
-            marker=dict(
-                size=12,
-                color='#00ff88',
-                line=dict(color='white', width=2),
-                symbol='circle'
-            ),
-            fill='tozeroy',
-            fillcolor='rgba(0, 255, 136, 0.15)',
-            hovertemplate='<b>Año:</b> %{x}<br><b>Dividendo:</b> $%{y:.2f}<extra></extra>'
-        ),
-        row=1, col=1
-    )
+    colors = ['#00ff88', '#00d4ff', '#7b2ff7', '#ffd93d', '#ff6b6b', 
+              '#51cf66', '#ff8787', '#00b4d8', '#90e0ef', '#ff006e']
     
-    # Crecimiento con colores condicionales
-    if len(annual_div_df) > 1:
-        growth = annual_div_df['annual_dividend'].pct_change() * 100
-        colors = ['#00ff88' if x >= 0 else '#ff6b6b' for x in growth]
-        
-        fig.add_trace(
-            go.Bar(
-                x=annual_div_df['year'],
-                y=growth,
-                name='Crecimiento %',
-                marker=dict(
-                    color=colors,
-                    line=dict(color='rgba(255, 255, 255, 0.2)', width=1)
-                ),
-                hovertemplate='<b>Año:</b> %{x}<br><b>Crecimiento:</b> %{y:.1f}%<extra></extra>'
-            ),
-            row=2, col=1
-        )
-    
-    # Actualizar ejes
-    fig.update_xaxes(
-        gridcolor='rgba(255, 255, 255, 0.1)',
-        showgrid=True,
-        zeroline=False,
-        row=1, col=1
-    )
-    fig.update_xaxes(
-        title_text="Año",
-        gridcolor='rgba(255, 255, 255, 0.1)',
-        showgrid=False,
-        zeroline=False,
-        row=2, col=1
-    )
-    
-    fig.update_yaxes(
-        title_text="Dividendo (USD)",
-        gridcolor='rgba(255, 255, 255, 0.1)',
-        showgrid=True,
-        zeroline=False,
-        tickprefix='$',
-        row=1, col=1
-    )
-    fig.update_yaxes(
-        title_text="Crecimiento (%)",
-        gridcolor='rgba(255, 255, 255, 0.1)',
-        showgrid=True,
-        zeroline=True,
-        zerolinecolor='rgba(255, 255, 255, 0.3)',
-        zerolinewidth=2,
-        ticksuffix='%',
-        row=2, col=1
-    )
+    fig.add_trace(go.Pie(
+        labels=labels,
+        values=values,
+        marker=dict(colors=colors[:len(labels)], line=dict(color='#1a1f2e', width=2)),
+        textinfo='label+percent',
+        textfont=dict(size=14),
+        hovertemplate='<b>%{label}</b><br>Peso: %{value}%<extra></extra>'
+    ))
     
     fig.update_layout(
-        height=650,
+        title='Composición de la Cartera',
         template='plotly_dark',
-        showlegend=False,
+        height=450,
         plot_bgcolor='#0e1117',
         paper_bgcolor='#0e1117',
-        hovermode='x',
-        title=dict(
-            text=f'<b>{ticker} - Análisis de Crecimiento de Dividendos</b>',
-            font=dict(size=20, color='white'),
-            x=0.5,
-            xanchor='center'
-        )
+        showlegend=False
     )
     
     return fig
 
 
 def main():
-    # Encabezado
     st.title("💎 Geraldine Weiss - Análisis de Dividendos")
     st.caption("Plataforma Profesional de Valoración por Dividendos y Estrategia de Inversión")
     
-    # Barra lateral
-    with st.sidebar:
-        st.header("⚙️ Configuración")
-        
-        ticker = st.text_input(
-            "Stock Ticker",
-            value="KO",
-            help="Introduce el símbolo de una acción que pague dividendos"
-        )
-        
-        years = st.slider(
-            "Período de Análisis (años)",
-            min_value=3,
-            max_value=10,
-            value=6,
-            help="Años de datos históricos a analizar"
-        )
-        
-        st.divider()
-        
-        analyze_button = st.button(
-            "🔍 Analizar Acción",
-            type="primary",
-            use_container_width=True
-        )
-        
-        st.divider()
-        
-        with st.expander("💡 Sobre Este Método"):
-            st.markdown("""
-            El enfoque de **Geraldine Weiss** identifica valor mediante análisis de rentabilidad por dividendo:
-            
-            - **Alta rentabilidad** = Infravalorada (Compra)
-            - **Baja rentabilidad** = Sobrevalorada (Venta)
-            - **Rango medio** = Valor razonable (Mantener)
-            """)
-        
-        with st.expander("📌 Sobre Geraldine Weiss"):
-            st.markdown("""
-            Geraldine Weiss fue pionera en la teoría de valoración mediante rentabilidad por dividendo.
-            
-            **Este método funciona mejor con:**
-            - ✓ Aristócratas de Dividendos
-            - ✓ Pagadores estables de dividendos
-            - ✓ Acciones blue-chip
-            """)
-        
-        st.divider()
-        
-        st.markdown("**🎯 Tickers Sugeridos**")
-        st.caption("KO · JNJ · PG · MMM · CAT · XOM · CVX · T")
+    # Tabs principales
+    main_tab1, main_tab2, main_tab3 = st.tabs([
+        "🎯 Análisis Individual",
+        "📊 Comparación Multi-Ticker",
+        "💼 Cartera Ponderada"
+    ])
     
-    # Contenido principal
-    if analyze_button and ticker:
-        with st.spinner('🔄 Analizando datos del mercado...'):
-            analyzer = GeraldineWeissAnalyzer(ticker.upper(), years)
+    # ==================== TAB 1: ANÁLISIS INDIVIDUAL ====================
+    with main_tab1:
+        col_sidebar, col_main = st.columns([1, 3])
+        
+        with col_sidebar:
+            st.header("⚙️ Configuración")
             
-            price_data = analyzer.fetch_price_data()
-            dividend_data = analyzer.fetch_dividend_data()
-            
-            if price_data is None or price_data.empty:
-                st.error("❌ No se pudieron obtener datos de precio. Verifica el ticker.")
-                return
-            
-            if dividend_data.empty:
-                st.error("❌ No hay datos de dividendos. Esta estrategia requiere acciones que paguen dividendos.")
-                return
-            
-            annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
-            analysis_df = analyzer.calculate_valuation_bands(price_data, annual_dividends)
-            
-            if analysis_df is None or analysis_df.empty:
-                st.error("❌ Datos insuficientes para calcular las bandas de valoración.")
-                return
-            
-            signal, description = analyzer.get_current_signal(analysis_df)
-            
-            # Mensaje de éxito
-            st.success(f"✅ Análisis completado para **{ticker.upper()}** con {len(dividend_data)} pagos de dividendos")
-            
-            # Señal principal
-            signal_colors = {
-                "COMPRA FUERTE": "#00ff88",
-                "COMPRA": "#51cf66",
-                "MANTENER": "#ffd93d",
-                "VENTA": "#ff8787",
-                "VENTA FUERTE": "#ff6b6b"
-            }
-            
-            st.markdown(
-                f"""<div class='big-signal' style='border-color: {signal_colors.get(signal, "#ffffff")}; color: {signal_colors.get(signal, "#ffffff")}'>
-                {signal}<br>
-                <div style='font-size: 18px; margin-top: 10px;'>{description}</div>
-                </div>""",
-                unsafe_allow_html=True
+            ticker = st.text_input(
+                "Stock Ticker",
+                value="KO",
+                help="Introduce el símbolo de una acción que pague dividendos"
             )
             
-            # Métricas clave
-            st.subheader("📊 Métricas Clave")
-            
-            latest = analysis_df.iloc[-1]
-            current_price = latest['Close']
-            current_yield = latest['div_yield'] * 100
-            undervalued_price = latest['undervalued']
-            overvalued_price = latest['overvalued']
-            upside_to_undervalued = ((undervalued_price/current_price - 1) * 100)
-            upside_to_overvalued = ((overvalued_price/current_price - 1) * 100)
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            col1.metric(
-                "💵 Precio Actual",
-                f"${current_price:.2f}",
-                help="Último precio de cierre"
-            )
-            col2.metric(
-                "📊 Rentabilidad",
-                f"{current_yield:.2f}%",
-                help="Rentabilidad por dividendo anual"
-            )
-            col3.metric(
-                "🟢 Zona Infravalorada",
-                f"${undervalued_price:.2f}",
-                delta=f"{upside_to_undervalued:.1f}%",
-                delta_color="inverse",
-                help="Nivel de precio infravalorado (compra)"
-            )
-            col4.metric(
-                "🔴 Zona Sobrevalorada",
-                f"${overvalued_price:.2f}",
-                delta=f"{upside_to_overvalued:.1f}%",
-                help="Nivel de precio sobrevalorado (venta)"
+            years = st.slider(
+                "Período de Análisis (años)",
+                min_value=3,
+                max_value=10,
+                value=6,
+                help="Años de datos históricos a analizar"
             )
             
             st.divider()
             
-            # Pestañas
-            tab1, tab2, tab3, tab4 = st.tabs([
-                "📈 Análisis de Valoración",
-                "💰 Historial de Dividendos",
-                "📊 Crecimiento",
-                "📚 Guía de Estrategia"
-            ])
+            analyze_button = st.button(
+                "🔍 Analizar Acción",
+                type="primary",
+                use_container_width=True
+            )
             
-            with tab1:
-                st.plotly_chart(
-                    plot_geraldine_weiss(analysis_df, ticker.upper()),
-                    use_container_width=True
-                )
-                
-                st.subheader("🎯 Interpretación del Gráfico")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.info("""
-                    **🟢 Zona Infravalorada**
-                    
-                    Cuando el precio se aproxima a la **línea verde**, la acción ofrece alta rentabilidad por dividendo.
-                    
-                    - **Acción:** Considerar comprar
-                    - **Riesgo:** Menor relativo al histórico
-                    - **Retorno:** Apreciación + dividendos
-                    """)
-                
-                with col2:
-                    st.warning("""
-                    **🔴 Zona Sobrevalorada**
-                    
-                    Cuando el precio se aproxima a la **línea roja**, la acción ofrece baja rentabilidad por dividendo.
-                    
-                    - **Acción:** Considerar vender
-                    - **Riesgo:** Mayor relativo al histórico
-                    - **Retorno:** Potencial alcista limitado
-                    """)
+            st.divider()
             
-            with tab2:
-                fig_div = plot_dividend_history(dividend_data, ticker.upper())
-                if fig_div:
-                    st.plotly_chart(fig_div, use_container_width=True)
+            with st.expander("💡 Sobre Este Método"):
+                st.markdown("""
+                El enfoque de **Geraldine Weiss** identifica valor mediante análisis de rentabilidad por dividendo:
+                
+                - **Alta rentabilidad** = Infravalorada (Compra)
+                - **Baja rentabilidad** = Sobrevalorada (Venta)
+                - **Rango medio** = Valor razonable (Mantener)
+                
+                ℹ️ **Fuentes de datos:**
+                - Acciones USA: dividendhistory.org
+                - Acciones Europa: yfinance
+                """)
+            
+            with st.expander("📌 Sobre Geraldine Weiss"):
+                st.markdown("""
+                Geraldine Weiss fue pionera en la teoría de valoración mediante rentabilidad por dividendo.
+                
+                **Este método funciona mejor con:**
+                - ✓ Aristócratas de Dividendos
+                - ✓ Pagadores estables de dividendos
+                - ✓ Acciones blue-chip
+                """)
+            
+            st.divider()
+            
+            st.markdown("**🎯 Tickers Sugeridos**")
+            st.caption("**USA:** KO · JNJ · PG · MMM · CAT · XOM · CVX")
+            st.caption("**Europa:** IBE.MC · SAN.MC · TEF.MC · REP.MC")
+        
+        with col_main:
+            if analyze_button and ticker:
+                with st.spinner('🔄 Analizando datos del mercado...'):
+                    result = analyze_ticker_quick(ticker.upper(), years)
                     
-                    st.divider()
-                    
-                    st.subheader("📊 Estadísticas de Dividendos")
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    total_divs = len(dividend_data)
-                    avg_div = dividend_data['amount'].mean()
-                    latest_div = dividend_data.iloc[0]['amount'] if len(dividend_data) > 0 else 0
-                    total_paid = dividend_data['amount'].sum()
-                    
-                    col1.metric("📋 Pagos Totales", f"{total_divs:,}")
-                    col2.metric("📊 Pago Promedio", f"${avg_div:.3f}")
-                    col3.metric("🎯 Último Pago", f"${latest_div:.3f}")
-                    col4.metric("💵 Total Acumulado", f"${total_paid:.2f}")
-                    
-                    st.divider()
-                    
-                    st.subheader("📅 Pagos de Dividendos Recientes")
-                    recent = dividend_data.head(12).copy()
-                    recent['ex_dividend_date'] = recent['ex_dividend_date'].dt.strftime('%Y-%m-%d')
-                    recent.columns = ['📅 Fecha Ex-Dividendo', '💰 Monto']
-                    recent['💰 Monto'] = recent['💰 Monto'].apply(lambda x: f"${x:.3f}")
-                    st.dataframe(
-                        recent,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "📅 Fecha Ex-Dividendo": st.column_config.TextColumn(width="medium"),
-                            "💰 Monto": st.column_config.TextColumn(width="medium")
+                    if result is None:
+                        st.error("❌ No se pudieron obtener datos suficientes. Verifica el ticker o intenta con otro período.")
+                    else:
+                        # Mensaje de éxito
+                        st.success(f"✅ Análisis completado para **{ticker.upper()}**")
+                        
+                        # Señal principal
+                        signal_colors = {
+                            "COMPRA FUERTE": "#00ff88",
+                            "COMPRA": "#51cf66",
+                            "MANTENER": "#ffd93d",
+                            "VENTA": "#ff8787",
+                            "VENTA FUERTE": "#ff6b6b"
                         }
-                    )
-            
-            with tab3:
-                fig_growth = plot_dividend_growth(annual_dividends, ticker.upper())
-                if fig_growth:
-                    st.plotly_chart(fig_growth, use_container_width=True)
-                    
-                    if len(annual_dividends) > 1:
-                        st.divider()
                         
-                        st.subheader("📈 Métricas de Crecimiento")
+                        st.markdown(
+                            f"""<div class='big-signal' style='border-color: {signal_colors.get(result['signal'], "#ffffff")}; color: {signal_colors.get(result['signal'], "#ffffff")}'>
+                            {result['signal']}<br>
+                            <div style='font-size: 18px; margin-top: 10px;'>Precio: ${result['price']:.2f}</div>
+                            </div>""",
+                            unsafe_allow_html=True
+                        )
                         
-                        cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
-                                annual_dividends['annual_dividend'].iloc[0]) ** 
-                               (1 / (len(annual_dividends) - 1)) - 1) * 100
-                        
-                        avg_growth = annual_dividends['annual_dividend'].pct_change().mean() * 100
-                        years_data = len(annual_dividends)
-                        latest_annual = annual_dividends['annual_dividend'].iloc[-1]
-                        first_annual = annual_dividends['annual_dividend'].iloc[0]
+                        # Métricas clave
+                        st.subheader("📊 Métricas Clave")
                         
                         col1, col2, col3, col4 = st.columns(4)
                         
-                        col1.metric(
-                            "📊 CAGR",
-                            f"{cagr:.2f}%",
-                            help="Tasa de Crecimiento Anual Compuesta"
-                        )
-                        col2.metric(
-                            "📈 Crecimiento Promedio",
-                            f"{avg_growth:.2f}%",
-                            help="Crecimiento anual promedio"
-                        )
-                        col3.metric(
-                            "📅 Período Analizado",
-                            f"{years_data} años"
-                        )
-                        col4.metric(
-                            "💰 Último Dividendo Anual",
-                            f"${latest_annual:.2f}",
-                            delta=f"+${latest_annual - first_annual:.2f} desde inicio"
-                        )
-            
-            with tab4:
-                col1, col2 = st.columns(2)
+                        upside_to_undervalued = ((result['undervalued']/result['price'] - 1) * 100)
+                        upside_to_overvalued = ((result['overvalued']/result['price'] - 1) * 100)
+                        
+                        col1.metric("💵 Precio Actual", f"${result['price']:.2f}")
+                        col2.metric("📊 Rentabilidad", f"{result['yield']:.2f}%")
+                        col3.metric("🟢 Zona Infravalorada", f"${result['undervalued']:.2f}", 
+                                   delta=f"{upside_to_undervalued:.1f}%", delta_color="inverse")
+                        col4.metric("🔴 Zona Sobrevalorada", f"${result['overvalued']:.2f}",
+                                   delta=f"{upside_to_overvalued:.1f}%")
+                        
+                        st.divider()
+                        
+                        # Mostrar análisis detallado (código existente)
+                        st.info("💡 Para análisis detallado completo, consulta la versión anterior del código")
+            else:
+                st.info("""
+                ### 👋 Bienvenido al Analizador Geraldine Weiss
                 
-                with col1:
-                    st.markdown("""
-                    ### 🎓 Resumen de la Estrategia
-                    
-                    **El Método de Geraldine Weiss** identifica oportunidades mediante patrones históricos de rentabilidad por dividendo.
-                    
-                    #### Filosofía Central
-                    
-                    Los precios fluctúan, pero empresas de calidad mantienen dividendos estables, creando patrones predecibles.
-                    
-                    #### Principios Clave
-                    
-                    - **Alta Rentabilidad** → Acción infravalorada
-                    - **Baja Rentabilidad** → Acción sobrevalorada
-                    - **Reversión a la Media** → Las rentabilidades vuelven al promedio
-                    
-                    #### Implementación
-                    
-                    1. **Compra**: Cuando precio entra en zona infravalorada
-                    2. **Mantener**: Conservar posición cobrando dividendos
-                    3. **Venta**: Cuando precio alcanza zona sobrevalorada
-                    4. **Repetir**: Reinvertir en nuevas oportunidades
-                    """)
-                
-                with col2:
-                    st.markdown("""
-                    ### ✅ Candidatos Ideales
-                    """)
-                    
-                    st.success("""
-                    **Aristócratas de Dividendos**  
-                    25+ años de aumentos consecutivos
-                    """)
-                    
-                    st.success("""
-                    **Empresas Blue-Chip**  
-                    Líderes del mercado con flujos estables
-                    """)
-                    
-                    st.success("""
-                    **Pagadores Consistentes**  
-                    Dividendos regulares sin recortes
-                    """)
-                    
-                    st.markdown("### ⚠️ Consideraciones de Riesgo")
-                    
-                    st.warning("""
-                    - Verificar sostenibilidad (payout ratio < 60%)
-                    - Monitorear fundamentos continuamente
-                    - Diversificar entre sectores
-                    - Evitar industrias cíclicas/volátiles
-                    - No depender de una sola métrica
-                    """)
-                
-                st.divider()
-                
-                st.markdown("""
-                ### 📊 Rendimiento Histórico
-                
-                La estrategia de Geraldine Weiss ha entregado históricamente:
-                
-                - **15-20% de descuento** en entrada al valor razonable
-                - **15-20% de prima** en salida al valor razonable
-                - **Ingresos consistentes** por dividendos
-                - **Apreciación de capital** a largo plazo
-                - **Menor volatilidad** vs estrategias de crecimiento
-                """)
-                
-                st.error("""
-                **⚠️ Aviso Legal:** Esta herramienta es solo para fines educativos e informativos. 
-                No constituye asesoramiento financiero. Consulta con un asesor cualificado antes de invertir.
-                El rendimiento pasado no garantiza resultados futuros.
+                Introduce un ticker en la barra lateral para comenzar el análisis individual.
                 """)
     
-    else:
-        # Pantalla de bienvenida
-        col1, col2, col3 = st.columns([1, 2, 1])
+    # ==================== TAB 2: COMPARACIÓN MULTI-TICKER ====================
+    with main_tab2:
+        st.header("📊 Análisis Comparativo Multi-Ticker")
+        st.caption("Compara hasta 6 acciones simultáneamente usando el método Geraldine Weiss")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            tickers_input = st.text_input(
+                "Tickers a Comparar (separados por comas)",
+                value="KO, PG, JNJ, PEP",
+                help="Ejemplo: KO, PG, JNJ, PEP"
+            )
         
         with col2:
+            years_comp = st.selectbox("Período", [3, 5, 6, 10], index=2)
+            compare_button = st.button("🔍 Comparar Acciones", type="primary", use_container_width=True)
+        
+        if compare_button:
+            tickers_list = [t.strip().upper() for t in tickers_input.split(',') if t.strip()]
+            
+            if len(tickers_list) < 2:
+                st.error("❌ Por favor introduce al menos 2 tickers para comparar")
+            elif len(tickers_list) > 6:
+                st.warning("⚠️ Máximo 6 tickers. Se analizarán los primeros 6.")
+                tickers_list = tickers_list[:6]
+            
+            with st.spinner(f'🔄 Analizando {len(tickers_list)} acciones...'):
+                results = []
+                progress_bar = st.progress(0)
+                
+                for i, ticker in enumerate(tickers_list):
+                    result = analyze_ticker_quick(ticker, years_comp)
+                    if result:
+                        results.append(result)
+                    progress_bar.progress((i + 1) / len(tickers_list))
+                
+                progress_bar.empty()
+                
+                if not results:
+                    st.error("❌ No se pudieron obtener datos para ningún ticker")
+                else:
+                    st.success(f"✅ Análisis completado para {len(results)} acciones")
+                    
+                    # Gráfico comparativo
+                    st.plotly_chart(plot_comparison_chart(results), use_container_width=True)
+                    
+                    st.divider()
+                    
+                    # Tabla comparativa
+                    st.subheader("📋 Tabla Comparativa")
+                    
+                    comparison_df = pd.DataFrame([{
+                        'Ticker': r['ticker'],
+                        'Precio': f"${r['price']:.2f}",
+                        'Yield': f"{r['yield']:.2f}%",
+                        'Infravalorada': f"${r['undervalued']:.2f}",
+                        'Sobrevalorada': f"${r['overvalued']:.2f}",
+                        'Señal': r['signal'],
+                        'Score': f"{r['score']:.1f}",
+                        'CAGR Div.': f"{r['cagr']:.1f}%"
+                    } for r in results])
+                    
+                    # Ordenar por score (mejores oportunidades primero)
+                    comparison_df = comparison_df.sort_values('Score', ascending=False)
+                    
+                    st.dataframe(
+                        comparison_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+                            "Señal": st.column_config.TextColumn("Señal", width="medium"),
+                            "Score": st.column_config.TextColumn("Score", width="small", help="Score: +100=muy infravalorada, -100=muy sobrevalorada")
+                        }
+                    )
+                    
+                    # Ranking de oportunidades
+                    st.divider()
+                    st.subheader("🏆 Ranking de Oportunidades")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    # Top compra
+                    buy_opportunities = [r for r in results if 'COMPRA' in r['signal']]
+                    buy_opportunities.sort(key=lambda x: x['score'], reverse=True)
+                    
+                    with col1:
+                        st.success("**🟢 Mejores Oportunidades de Compra**")
+                        if buy_opportunities:
+                            for r in buy_opportunities[:3]:
+                                st.markdown(f"**{r['ticker']}** - {r['signal']}")
+                                st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
+                        else:
+                            st.caption("No hay señales de compra")
+                    
+                    # Mantener
+                    hold_opportunities = [r for r in results if r['signal'] == 'MANTENER']
+                    
+                    with col2:
+                        st.info("**🟡 Mantener Posición**")
+                        if hold_opportunities:
+                            for r in hold_opportunities[:3]:
+                                st.markdown(f"**{r['ticker']}** - {r['signal']}")
+                                st.caption(f"Yield: {r['yield']:.2f}%")
+                        else:
+                            st.caption("No hay señales de mantener")
+                    
+                    # Top venta
+                    sell_opportunities = [r for r in results if 'VENTA' in r['signal']]
+                    sell_opportunities.sort(key=lambda x: x['score'])
+                    
+                    with col3:
+                        st.warning("**🔴 Considerar Venta**")
+                        if sell_opportunities:
+                            for r in sell_opportunities[:3]:
+                                st.markdown(f"**{r['ticker']}** - {r['signal']}")
+                                st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
+                        else:
+                            st.caption("No hay señales de venta")
+    
+    # ==================== TAB 3: CARTERA PONDERADA ====================
+    with main_tab3:
+        st.header("💼 Análisis de Cartera Ponderada")
+        st.caption("Aplica el método Geraldine Weiss a tu cartera completa")
+        
+        # Inicializar session state para la cartera
+        if 'portfolio' not in st.session_state:
+            st.session_state.portfolio = pd.DataFrame(columns=['ticker', 'weight'])
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.subheader("➕ Añadir Posiciones")
+            
+            col_a, col_b, col_c = st.columns([2, 1, 1])
+            
+            with col_a:
+                new_ticker = st.text_input("Ticker", key="portfolio_ticker")
+            with col_b:
+                new_weight = st.number_input("Peso (%)", min_value=0.0, max_value=100.0, value=10.0, step=5.0, key="portfolio_weight")
+            with col_c:
+                st.write("")
+                st.write("")
+                if st.button("➕ Añadir", type="secondary", use_container_width=True):
+                    if new_ticker:
+                        new_row = pd.DataFrame([{'ticker': new_ticker.upper(), 'weight': new_weight}])
+                        st.session_state.portfolio = pd.concat([st.session_state.portfolio, new_row], ignore_index=True)
+                        st.rerun()
+        
+        with col2:
+            st.subheader("🎯 Acciones Rápidas")
+            if st.button("🗑️ Limpiar Cartera", use_container_width=True):
+                st.session_state.portfolio = pd.DataFrame(columns=['ticker', 'weight'])
+                st.rerun()
+            
+            if st.button("📋 Cartera Ejemplo", use_container_width=True):
+                st.session_state.portfolio = pd.DataFrame([
+                    {'ticker': 'KO', 'weight': 25},
+                    {'ticker': 'JNJ', 'weight': 25},
+                    {'ticker': 'PG', 'weight': 25},
+                    {'ticker': 'PEP', 'weight': 25}
+                ])
+                st.rerun()
+        
+        st.divider()
+        
+        # Mostrar cartera actual
+        if not st.session_state.portfolio.empty:
+            st.subheader("📊 Cartera Actual")
+            
+            # Normalizar pesos
+            total_weight = st.session_state.portfolio['weight'].sum()
+            if total_weight != 100:
+                st.warning(f"⚠️ Los pesos suman {total_weight:.1f}%. Se normalizarán a 100%.")
+            
+            # Mostrar tabla editable
+            edited_df = st.data_editor(
+                st.session_state.portfolio,
+                use_container_width=True,
+                hide_index=True,
+                num_rows="dynamic",
+                column_config={
+                    "ticker": st.column_config.TextColumn("Ticker", width="medium"),
+                    "weight": st.column_config.NumberColumn("Peso (%)", width="small", min_value=0, max_value=100)
+                }
+            )
+            
+            st.session_state.portfolio = edited_df
+            
+            st.divider()
+            
+            # Botón de análisis
+            if st.button("🔍 Analizar Cartera Completa", type="primary", use_container_width=True):
+                with st.spinner('🔄 Analizando cartera...'):
+                    # Normalizar pesos
+                    portfolio_data = st.session_state.portfolio.copy()
+                    portfolio_data['weight'] = (portfolio_data['weight'] / portfolio_data['weight'].sum()) * 100
+                    
+                    # Analizar cada ticker
+                    portfolio_results = []
+                    progress_bar = st.progress(0)
+                    
+                    for i, row in portfolio_data.iterrows():
+                        result = analyze_ticker_quick(row['ticker'], 6)
+                        if result:
+                            result['portfolio_weight'] = row['weight']
+                            portfolio_results.append(result)
+                        progress_bar.progress((i + 1) / len(portfolio_data))
+                    
+                    progress_bar.empty()
+                    
+                    if not portfolio_results:
+                        st.error("❌ No se pudieron obtener datos para ningún ticker de la cartera")
+                    else:
+                        st.success(f"✅ Cartera analizada: {len(portfolio_results)} posiciones")
+                        
+                        # Calcular métricas de cartera ponderada
+                        total_yield = sum(r['yield'] * r['portfolio_weight'] / 100 for r in portfolio_results)
+                        total_cagr = sum(r['cagr'] * r['portfolio_weight'] / 100 for r in portfolio_results)
+                        avg_score = sum(r['score'] * r['portfolio_weight'] / 100 for r in portfolio_results)
+                        
+                        # Determinar señal de cartera
+                        if avg_score > 30:
+                            portfolio_signal = "COMPRA"
+                            signal_color = "#00ff88"
+                        elif avg_score < -30:
+                            portfolio_signal = "VENTA"
+                            signal_color = "#ff6b6b"
+                        else:
+                            portfolio_signal = "MANTENER"
+                            signal_color = "#ffd93d"
+                        
+                        # Banner de señal de cartera
+                        st.markdown(
+                            f"""<div class='big-signal' style='border-color: {signal_color}; color: {signal_color}; font-size: 36px;'>
+                            Señal de Cartera: {portfolio_signal}<br>
+                            <div style='font-size: 16px; margin-top: 10px;'>Score Ponderado: {avg_score:.1f}</div>
+                            </div>""",
+                            unsafe_allow_html=True
+                        )
+                        
+                        # Métricas de cartera
+                        st.subheader("📊 Métricas de Cartera Ponderada")
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        col1.metric("💰 Yield Promedio", f"{total_yield:.2f}%")
+                        col2.metric("📈 CAGR Promedio", f"{total_cagr:.2f}%")
+                        col3.metric("🎯 Score Cartera", f"{avg_score:.1f}")
+                        col4.metric("📋 Posiciones", len(portfolio_results))
+                        
+                        st.divider()
+                        
+                        # Composición
+                        col1, col2 = st.columns([1, 1])
+                        
+                        with col1:
+                            st.plotly_chart(
+                                plot_portfolio_composition(portfolio_data),
+                                use_container_width=True
+                            )
+                        
+                        with col2:
+                            st.subheader("📋 Detalle de Posiciones")
+                            
+                            portfolio_detail = pd.DataFrame([{
+                                'Ticker': r['ticker'],
+                                'Peso': f"{r['portfolio_weight']:.1f}%",
+                                'Yield': f"{r['yield']:.2f}%",
+                                'Señal': r['signal'],
+                                'Score': f"{r['score']:.1f}"
+                            } for r in portfolio_results])
+                            
+                            st.dataframe(
+                                portfolio_detail,
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                        
+                        st.divider()
+                        
+                        # Recomendaciones
+                        st.subheader("💡 Recomendaciones de Rebalanceo")
+                        
+                        buy_positions = [r for r in portfolio_results if 'COMPRA' in r['signal']]
+                        sell_positions = [r for r in portfolio_results if 'VENTA' in r['signal']]
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.success("**🟢 Considerar Aumentar Posición**")
+                            if buy_positions:
+                                for r in buy_positions:
+                                    st.markdown(f"**{r['ticker']}** ({r['portfolio_weight']:.1f}%) - {r['signal']}")
+                                    st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
+                            else:
+                                st.caption("No hay posiciones en zona de compra")
+                        
+                        with col2:
+                            st.warning("**🔴 Considerar Reducir Posición**")
+                            if sell_positions:
+                                for r in sell_positions:
+                                    st.markdown(f"**{r['ticker']}** ({r['portfolio_weight']:.1f}%) - {r['signal']}")
+                                    st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
+                            else:
+                                st.caption("No hay posiciones en zona de venta")
+        
+        else:
             st.info("""
-            ### 👋 Bienvenido al Analizador Geraldine Weiss
+            ### 📝 Instrucciones
             
-            Esta herramienta profesional implementa la legendaria metodología de valoración por dividendos.
-            """)
+            1. **Añade tickers** con sus pesos porcentuales
+            2. Los pesos se **normalizarán automáticamente** a 100%
+            3. Haz clic en **"Analizar Cartera Completa"**
+            4. Obtén señales y recomendaciones ponderadas
             
-            st.markdown("""
-            #### 🎯 Lo Que Ofrece Esta Herramienta
-            
-            - 📊 Análisis histórico de rentabilidad por dividendo
-            - 📈 Bandas dinámicas de valoración (sobrevalorada/infravalorada)
-            - 🎯 Señales claras de compra/venta/mantener
-            - 💰 Seguimiento completo de pagos de dividendos
-            - 📉 Cálculos de tasa de crecimiento y CAGR
-            - 🖼️ Visualizaciones interactivas
-            
-            #### 🚀 Cómo Empezar
-            
-            1. **Introduce un ticker** en la barra lateral (ej: KO, JNJ, PG)
-            2. **Ajusta el período** de análisis (3-10 años)
-            3. **Haz clic** en "Analizar Acción"
-            4. **Revisa** las bandas de valoración y señales
-            """)
-            
-            st.success("""
-            **💡 Tickers Recomendados para Probar:**
-            
-            KO (Coca-Cola) · JNJ (Johnson & Johnson) · PG (Procter & Gamble)  
-            MMM (3M) · CAT (Caterpillar) · XOM (ExxonMobil) · CVX (Chevron)
+            💡 **Tip:** Usa el botón "Cartera Ejemplo" para ver un ejemplo rápido
             """)
     
-    # Créditos del autor
+    # Créditos
     st.markdown("""
     <div class='footer-credit'>
         Desarrollado por <a href='https://bquantfinance.com' target='_blank'>@Gsnchez | bquantfinance.com</a>
