@@ -62,6 +62,27 @@ st.markdown("""
         font-weight: 700;
     }
     
+    .data-source-badge {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        margin-left: 10px;
+    }
+    
+    .source-dividendhistory {
+        background-color: rgba(0, 255, 136, 0.2);
+        color: #00ff88;
+        border: 1px solid #00ff88;
+    }
+    
+    .source-yfinance {
+        background-color: rgba(0, 212, 255, 0.2);
+        color: #00d4ff;
+        border: 1px solid #00d4ff;
+    }
+    
     .footer-credit {
         position: fixed;
         bottom: 20px;
@@ -116,7 +137,6 @@ class DividendDataFetcher:
             try:
                 tables = pd.read_html(StringIO(response.text))
             except ImportError:
-                # Si no tiene lxml instalado, retornar vacío para usar fallback
                 return pd.DataFrame()
             
             if not tables:
@@ -128,7 +148,6 @@ class DividendDataFetcher:
                 temp_df = table.copy()
                 temp_df.columns = [str(col).strip() for col in temp_df.columns]
                 
-                # Si todas las columnas son números, usar primera fila como headers
                 if all(col.isdigit() for col in temp_df.columns):
                     temp_df.columns = temp_df.iloc[0].astype(str).str.strip().tolist()
                     temp_df = temp_df.iloc[1:].reset_index(drop=True)
@@ -191,6 +210,7 @@ class GeraldineWeissAnalyzer:
         self.ticker = ticker
         self.years = years
         self.dividend_fetcher = DividendDataFetcher()
+        self.data_source = None  # Track data source
         
     def fetch_price_data(self):
         """Obtiene datos históricos de precios"""
@@ -235,14 +255,17 @@ class GeraldineWeissAnalyzer:
                 )
                 
                 if not df.empty:
+                    self.data_source = "dividendhistory.org"
                     return df
             except Exception:
                 pass
             
             # Fallback a yfinance
+            self.data_source = "yfinance"
             return self._fetch_from_yfinance(start_date)
         else:
             # CON SUFIJO = Europa/Internacional → usar yfinance directamente
+            self.data_source = "yfinance"
             return self._fetch_from_yfinance(start_date)
     
     def _fetch_from_yfinance(self, start_date):
@@ -399,10 +422,21 @@ def analyze_ticker_quick(ticker, years=6):
             'annual_dividend': latest['annual_dividend'],
             'cagr': cagr,
             'analysis_df': analysis_df,
-            'dividend_data': dividend_data
+            'dividend_data': dividend_data,
+            'data_source': analyzer.data_source  # Add data source info
         }
     except Exception:
         return None
+
+
+def get_data_source_badge(source):
+    """Genera un badge HTML para la fuente de datos"""
+    if source == "dividendhistory.org":
+        return '<span class="data-source-badge source-dividendhistory">📊 dividendhistory.org</span>'
+    elif source == "yfinance":
+        return '<span class="data-source-badge source-yfinance">📈 yfinance</span>'
+    else:
+        return '<span class="data-source-badge">❓ Desconocido</span>'
 
 
 def plot_geraldine_weiss_individual(analysis_df, ticker):
@@ -708,7 +742,11 @@ def main():
                         - Reduce el período de análisis a 3 años
                         """)
                     else:
-                        st.success(f"✅ Análisis completado para **{ticker.upper()}**")
+                        # Show data source badge
+                        st.markdown(
+                            f"✅ **Análisis completado para {ticker.upper()}** {get_data_source_badge(result['data_source'])}",
+                            unsafe_allow_html=True
+                        )
                         
                         signal_colors = {
                             "COMPRA FUERTE": "#00ff88",
@@ -844,6 +882,7 @@ def main():
                         
                         comparison_df = pd.DataFrame([{
                             'Ticker': r['ticker'],
+                            'Fuente': '📊' if r['data_source'] == 'dividendhistory.org' else '📈',
                             'Precio': f"${r['price']:.2f}",
                             'Yield': f"{r['yield']:.2f}%",
                             'Infravalorada': f"${r['undervalued']:.2f}",
@@ -856,6 +895,7 @@ def main():
                         comparison_df = comparison_df.sort_values('Score', ascending=False)
                         
                         st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+                        st.caption("📊 = dividendhistory.org | 📈 = yfinance")
                         
                         st.divider()
                         st.subheader("🏆 Ranking de Oportunidades")
@@ -1032,6 +1072,7 @@ def main():
                             
                             portfolio_detail = pd.DataFrame([{
                                 'Ticker': r['ticker'],
+                                'Fuente': '📊' if r['data_source'] == 'dividendhistory.org' else '📈',
                                 'Peso': f"{r['portfolio_weight']:.1f}%",
                                 'Yield': f"{r['yield']:.2f}%",
                                 'Señal': r['signal'],
@@ -1039,6 +1080,7 @@ def main():
                             } for r in portfolio_results])
                             
                             st.dataframe(portfolio_detail, use_container_width=True, hide_index=True)
+                            st.caption("📊 = dividendhistory.org | 📈 = yfinance")
                         
                         st.divider()
                         
