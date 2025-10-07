@@ -324,21 +324,31 @@ def analyze_ticker_quick(ticker, years=6):
     try:
         analyzer = GeraldineWeissAnalyzer(ticker, years)
         
+        # Paso 1: Obtener datos de precio
         price_data = analyzer.fetch_price_data()
         if price_data is None or price_data.empty:
+            st.warning(f"Debug {ticker}: No se pudieron obtener datos de precio")
             return None
         
+        # Paso 2: Obtener datos de dividendos
         dividend_data = analyzer.fetch_dividend_data()
         if dividend_data.empty:
+            st.warning(f"Debug {ticker}: No se encontraron datos de dividendos")
             return None
         
+        # Paso 3: Calcular dividendos anuales
         annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
         if annual_dividends.empty:
+            st.warning(f"Debug {ticker}: No se pudieron calcular dividendos anuales")
             return None
         
+        # Paso 4: Calcular bandas de valoración
         analysis_df = analyzer.calculate_valuation_bands(price_data, annual_dividends)
         
         if analysis_df is None or analysis_df.empty:
+            st.warning(f"Debug {ticker}: No se pudieron calcular bandas de valoración")
+            st.write(f"Años de precios: {price_data['year'].nunique() if 'year' in price_data.columns else 'N/A'}")
+            st.write(f"Años de dividendos: {len(annual_dividends)}")
             return None
         
         signal, description, score = analyzer.get_current_signal(analysis_df)
@@ -347,9 +357,12 @@ def analyze_ticker_quick(ticker, years=6):
         # Calcular CAGR
         cagr = 0
         if len(annual_dividends) > 1:
-            cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
-                    annual_dividends['annual_dividend'].iloc[0]) ** 
-                   (1 / (len(annual_dividends) - 1)) - 1) * 100
+            try:
+                cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
+                        annual_dividends['annual_dividend'].iloc[0]) ** 
+                       (1 / (len(annual_dividends) - 1)) - 1) * 100
+            except:
+                cagr = 0
         
         return {
             'ticker': ticker,
@@ -364,7 +377,10 @@ def analyze_ticker_quick(ticker, years=6):
             'analysis_df': analysis_df,
             'dividend_data': dividend_data
         }
-    except Exception:
+    except Exception as e:
+        st.error(f"Debug {ticker}: Error en análisis - {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
         return None
 
 
