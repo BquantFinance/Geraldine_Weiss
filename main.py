@@ -197,13 +197,21 @@ class DividendDataFetcher:
 
 
 def get_real_current_price(ticker: str):
-    """Obtiene el precio real actual usando múltiples métodos"""
+    """Obtiene el precio real actual usando múltiples métodos en la moneda correcta"""
     prices = []
     
     try:
         ticker_obj = yf.Ticker(ticker)
         
-        # Método 1: history(period='1d') - A menudo el más actualizado
+        # Obtener moneda del ticker
+        currency = None
+        try:
+            info = ticker_obj.info
+            currency = info.get('currency', None)
+        except:
+            pass
+        
+        # Método 1: history(period='1d') - Siempre en moneda local
         try:
             hist_1d = ticker_obj.history(period='1d')
             if not hist_1d.empty and 'Close' in hist_1d.columns:
@@ -213,7 +221,7 @@ def get_real_current_price(ticker: str):
         except:
             pass
         
-        # Método 2: history(period='5d') con último valor
+        # Método 2: history(period='5d') - Siempre en moneda local
         try:
             hist_5d = ticker_obj.history(period='5d')
             if not hist_5d.empty and 'Close' in hist_5d.columns:
@@ -223,28 +231,31 @@ def get_real_current_price(ticker: str):
         except:
             pass
         
-        # Método 3: ticker.info
+        # Método 3: history(period='1mo') para tener más datos
         try:
-            info = ticker_obj.info
-            price = (
-                info.get('currentPrice') or 
-                info.get('regularMarketPrice') or
-                info.get('regularMarketPreviousClose') or
-                info.get('previousClose')
-            )
-            if price and price > 0:
-                prices.append(price)
-        except:
-            pass
-        
-        # Método 4: fast_info (si está disponible)
-        try:
-            if hasattr(ticker_obj, 'fast_info'):
-                price = ticker_obj.fast_info.get('lastPrice')
-                if price and price > 0:
+            hist_1mo = ticker_obj.history(period='1mo')
+            if not hist_1mo.empty and 'Close' in hist_1mo.columns:
+                price = hist_1mo['Close'].iloc[-1]
+                if price > 0:
                     prices.append(price)
         except:
             pass
+        
+        # IGNORAR ticker.info para acciones no-USD - puede estar en moneda incorrecta
+        # Solo usar para tickers US sin sufijo
+        if '.' not in ticker:
+            try:
+                info = ticker_obj.info
+                price = (
+                    info.get('currentPrice') or 
+                    info.get('regularMarketPrice') or
+                    info.get('regularMarketPreviousClose') or
+                    info.get('previousClose')
+                )
+                if price and price > 0:
+                    prices.append(price)
+            except:
+                pass
         
     except:
         pass
@@ -300,18 +311,19 @@ class GeraldineWeissAnalyzer:
             
             data.index = pd.to_datetime(data.index)
             
-            # CORRECCIÓN AGRESIVA DEL PRECIO
+            # CORRECCIÓN DE PRECIO (solo si discrepancia significativa)
             if 'Close' in data.columns and len(data) > 0:
                 historical_latest = data['Close'].iloc[-1]
                 
-                # Obtener precio real usando múltiples métodos
+                # Obtener precio real usando history() - siempre en moneda local
                 real_price = get_real_current_price(self.ticker)
                 
                 if real_price and real_price > 0 and historical_latest > 0:
                     discrepancy = abs(historical_latest - real_price) / real_price
                     
-                    # Si hay más del 3% de discrepancia, ajustar
-                    if discrepancy > 0.03:
+                    # Solo ajustar si hay discrepancia >10% (evita ajustes por diferencias de timezone)
+                    # Menos agresivo para evitar problemas con monedas
+                    if discrepancy > 0.10:
                         adjustment_factor = real_price / historical_latest
                         
                         # Ajustar toda la serie temporal
