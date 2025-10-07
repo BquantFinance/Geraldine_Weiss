@@ -196,61 +196,6 @@ class DividendDataFetcher:
             return pd.DataFrame()
 
 
-def get_real_current_price(ticker: str):
-    """
-    Obtiene el precio real actual en moneda local usando history()
-    Evita problemas de conversión de moneda usando solo datos históricos
-    """
-    prices = []
-    
-    try:
-        ticker_obj = yf.Ticker(ticker)
-        
-        # Usar SOLO history() - siempre devuelve precios en moneda local del exchange
-        # Esto evita problemas de conversión EUR/USD/GBP/JPY etc.
-        
-        # Método 1: Último día de trading
-        try:
-            hist_1d = ticker_obj.history(period='1d')
-            if not hist_1d.empty and 'Close' in hist_1d.columns:
-                price = hist_1d['Close'].iloc[-1]
-                if price > 0:
-                    prices.append(price)
-        except:
-            pass
-        
-        # Método 2: Últimos 5 días
-        try:
-            hist_5d = ticker_obj.history(period='5d')
-            if not hist_5d.empty and 'Close' in hist_5d.columns:
-                price = hist_5d['Close'].iloc[-1]
-                if price > 0:
-                    prices.append(price)
-        except:
-            pass
-        
-        # Método 3: Último mes (útil si mercado cerrado hoy)
-        try:
-            hist_1mo = ticker_obj.history(period='1mo')
-            if not hist_1mo.empty and 'Close' in hist_1mo.columns:
-                price = hist_1mo['Close'].iloc[-1]
-                if price > 0:
-                    prices.append(price)
-        except:
-            pass
-        
-    except:
-        pass
-    
-    # Usar mediana para eliminar outliers
-    if len(prices) >= 2:
-        return np.median(prices)
-    elif len(prices) == 1:
-        return prices[0]
-    else:
-        return None
-
-
 class GeraldineWeissAnalyzer:
     """Implementa el método de valoración por dividendos de Geraldine Weiss"""
     
@@ -260,18 +205,33 @@ class GeraldineWeissAnalyzer:
         self.dividend_fetcher = DividendDataFetcher()
         self.data_source = None
         
-_price / historical_latest
-                        
-                        # Ajustar toda la serie temporal proporcionalmente
-                        data['Close'] = data['Close'] * adjustment_factor
-                        if 'Open' in data.columns:
-                            data['Open'] = data['Open'] * adjustment_factor
-                        if 'High' in data.columns:
-                            data['High'] = data['High'] * adjustment_factor
-                        if 'Low' in data.columns:
-                            data['Low'] = data['Low'] * adjustment_factor
-                        if 'Adj Close' in data.columns:
-                            data['Adj Close'] = data['Adj Close'] * adjustment_factor
+    def fetch_price_data(self):
+        """
+        Obtiene datos históricos de precios sin caché usando Ticker().history()
+        Esto evita problemas de caché de yf.download()
+        """
+        end_date = datetime.now()
+        start_date = end_date - relativedelta(years=self.years)
+        
+        try:
+            # Usar Ticker().history() para evitar caché y obtener datos frescos
+            ticker_obj = yf.Ticker(self.ticker)
+            
+            # history() sin auto_adjust para precios originales en moneda local
+            data = ticker_obj.history(
+                start=start_date,
+                end=end_date,
+                auto_adjust=False,
+                actions=False
+            )
+            
+            if data.empty:
+                return None
+            
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+            
+            data.index = pd.to_datetime(data.index)
             
             return data
             
@@ -283,7 +243,7 @@ _price / historical_latest
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
-        # Primero intentar con yfinance (más confiable y consistente)
+        # Primero intentar con yfinance (más confiable)
         df = self._fetch_from_yfinance(start_date)
         if not df.empty:
             self.data_source = "yfinance"
@@ -439,15 +399,15 @@ _price / historical_latest
             score = 0
         
         if price <= lower_buy_zone:
-            return "COMPRA FUERTE", f"Precio ${price:.2f} está en zona infravalorada", score
+            return "COMPRA FUERTE", f"Precio {price:.2f} está en zona infravalorada", score
         elif price <= undervalued:
-            return "COMPRA", f"Precio ${price:.2f} se aproxima al nivel infravalorado", score
+            return "COMPRA", f"Precio {price:.2f} se aproxima al nivel infravalorado", score
         elif price >= upper_sell_zone:
-            return "VENTA FUERTE", f"Precio ${price:.2f} está en zona sobrevalorada", score
+            return "VENTA FUERTE", f"Precio {price:.2f} está en zona sobrevalorada", score
         elif price >= overvalued:
-            return "VENTA", f"Precio ${price:.2f} se aproxima al nivel sobrevalorado", score
+            return "VENTA", f"Precio {price:.2f} se aproxima al nivel sobrevalorado", score
         else:
-            return "MANTENER", f"Precio ${price:.2f} está en rango de valor razonable", score
+            return "MANTENER", f"Precio {price:.2f} está en rango de valor razonable", score
 
 
 def analyze_ticker_quick(ticker, years=6):
@@ -590,7 +550,7 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         name='Sobrevalorada',
         line=dict(color='#ff6b6b', width=3),
         mode='lines',
-        hovertemplate='<b>Sobrevalorada:</b> $%{y:.2f}<extra></extra>'
+        hovertemplate='<b>Sobrevalorada:</b> %{y:.2f}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -599,7 +559,7 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         name='Infravalorada',
         line=dict(color='#00ff88', width=3),
         mode='lines',
-        hovertemplate='<b>Infravalorada:</b> $%{y:.2f}<extra></extra>'
+        hovertemplate='<b>Infravalorada:</b> %{y:.2f}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -608,7 +568,7 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         name='Precio Actual',
         line=dict(color='#00d4ff', width=4),
         mode='lines',
-        hovertemplate='<b>Precio:</b> $%{y:.2f}<extra></extra>'
+        hovertemplate='<b>Precio:</b> %{y:.2f}<extra></extra>'
     ))
     
     latest = analysis_df.iloc[-1]
@@ -618,13 +578,13 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         mode='markers',
         marker=dict(size=16, color='#00d4ff', line=dict(color='white', width=3)),
         showlegend=False,
-        hovertemplate=f'<b>Actual: ${latest["Close"]:.2f}</b><extra></extra>'
+        hovertemplate=f'<b>Actual: {latest["Close"]:.2f}</b><extra></extra>'
     ))
     
     fig.add_annotation(
         x=analysis_df.index[-1],
         y=latest['Close'],
-        text=f"${latest['Close']:.2f}",
+        text=f"{latest['Close']:.2f}",
         showarrow=True,
         arrowhead=2,
         arrowsize=1,
@@ -707,7 +667,7 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         name='Sobrevalorada',
         line=dict(color='#ff6b6b', width=3),
         mode='lines',
-        hovertemplate='<b>Sobrevalorada:</b> $%{y:.2f}<extra></extra>'
+        hovertemplate='<b>Sobrevalorada:</b> %{y:.2f}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -716,7 +676,7 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         name='Infravalorada',
         line=dict(color='#00ff88', width=3),
         mode='lines',
-        hovertemplate='<b>Infravalorada:</b> $%{y:.2f}<extra></extra>'
+        hovertemplate='<b>Infravalorada:</b> %{y:.2f}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -725,7 +685,7 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         name='Precio Ponderado',
         line=dict(color='#00d4ff', width=4),
         mode='lines',
-        hovertemplate='<b>Precio:</b> $%{y:.2f}<extra></extra>'
+        hovertemplate='<b>Precio:</b> %{y:.2f}<extra></extra>'
     ))
     
     latest = portfolio_df.iloc[-1]
@@ -735,13 +695,13 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         mode='markers',
         marker=dict(size=16, color='#00d4ff', line=dict(color='white', width=3)),
         showlegend=False,
-        hovertemplate=f'<b>Actual: ${latest["weighted_price"]:.2f}</b><extra></extra>'
+        hovertemplate=f'<b>Actual: {latest["weighted_price"]:.2f}</b><extra></extra>'
     ))
     
     fig.add_annotation(
         x=portfolio_df.index[-1],
         y=latest['weighted_price'],
-        text=f"${latest['weighted_price']:.2f}",
+        text=f"{latest['weighted_price']:.2f}",
         showarrow=True,
         arrowhead=2,
         arrowsize=1,
@@ -836,7 +796,7 @@ def plot_comparison_chart(results):
         mode='lines+markers',
         line=dict(color='#00d4ff', width=4),
         marker=dict(size=15, color=colors, line=dict(color='white', width=2)),
-        text=[f"${p:.2f}" for p in prices],
+        text=[f"{p:.2f}" for p in prices],
         textposition="top center"
     ))
     
