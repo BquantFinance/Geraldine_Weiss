@@ -133,7 +133,6 @@ class DividendDataFetcher:
             if len(response.text) < 100:
                 return pd.DataFrame()
             
-            # Intentar parsear HTML
             try:
                 tables = pd.read_html(StringIO(response.text))
             except ImportError:
@@ -142,7 +141,6 @@ class DividendDataFetcher:
             if not tables:
                 return pd.DataFrame()
             
-            # Buscar la tabla correcta
             df = None
             for table in tables:
                 temp_df = table.copy()
@@ -159,7 +157,6 @@ class DividendDataFetcher:
             if df is None:
                 return pd.DataFrame()
             
-            # Mapear columnas
             column_mapping = {
                 'Ex-Dividend Date': 'ex_dividend_date',
                 'Payout Date': 'payout_date',
@@ -171,22 +168,18 @@ class DividendDataFetcher:
             if 'ex_dividend_date' not in df.columns:
                 return pd.DataFrame()
             
-            # Procesar fechas
             df['ex_dividend_date'] = pd.to_datetime(df['ex_dividend_date'], errors='coerce')
             if 'payout_date' in df.columns:
                 df['payout_date'] = pd.to_datetime(df['payout_date'], errors='coerce')
             
-            # Procesar montos
             if 'amount' in df.columns:
                 df['amount'] = df['amount'].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False).str.strip()
                 df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
             
-            # Filtrar datos válidos
             df = df[df['ex_dividend_date'].notna()]
             df = df[df['amount'].notna()]
             df = df[df['amount'] > 0]
             
-            # Filtrar por rango de fechas
             if start_date:
                 df = df[df['ex_dividend_date'] >= pd.to_datetime(start_date)]
             if end_date:
@@ -210,7 +203,7 @@ class GeraldineWeissAnalyzer:
         self.ticker = ticker
         self.years = years
         self.dividend_fetcher = DividendDataFetcher()
-        self.data_source = None  # Track data source
+        self.data_source = None
         
     def fetch_price_data(self):
         """Obtiene datos históricos de precios"""
@@ -242,11 +235,9 @@ class GeraldineWeissAnalyzer:
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
-        # Detectar si tiene sufijo (europeo/internacional) o no (USA)
         has_suffix = '.' in self.ticker
         
         if not has_suffix:
-            # SIN SUFIJO = USA → intentar dividendhistory.org primero
             try:
                 df = self.dividend_fetcher.fetch_dividends(
                     self.ticker, 
@@ -260,11 +251,9 @@ class GeraldineWeissAnalyzer:
             except Exception:
                 pass
             
-            # Fallback a yfinance
             self.data_source = "yfinance"
             return self._fetch_from_yfinance(start_date)
         else:
-            # CON SUFIJO = Europa/Internacional → usar yfinance directamente
             self.data_source = "yfinance"
             return self._fetch_from_yfinance(start_date)
     
@@ -275,7 +264,6 @@ class GeraldineWeissAnalyzer:
             divs = ticker_obj.dividends
             
             if not divs.empty:
-                # Manejar timezone
                 if divs.index.tz is not None:
                     if start_date.tzinfo is None:
                         start_date = pytz.UTC.localize(start_date)
@@ -423,7 +411,7 @@ def analyze_ticker_quick(ticker, years=6):
             'cagr': cagr,
             'analysis_df': analysis_df,
             'dividend_data': dividend_data,
-            'data_source': analyzer.data_source  # Add data source info
+            'data_source': analyzer.data_source
         }
     except Exception:
         return None
@@ -552,6 +540,66 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
             bordercolor='rgba(255, 255, 255, 0.2)',
             borderwidth=1
         )
+    )
+    
+    return fig
+
+
+def plot_geraldine_weiss_compact(analysis_df, ticker):
+    """Crea gráfico compacto de Geraldine Weiss para cartera"""
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['overvalued'],
+        name='Sobrevalorada',
+        line=dict(color='#ff6b6b', width=2),
+        mode='lines'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['undervalued'],
+        name='Infravalorada',
+        line=dict(color='#00ff88', width=2),
+        mode='lines'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['Close'],
+        name='Precio',
+        line=dict(color='#00d4ff', width=3),
+        mode='lines'
+    ))
+    
+    fig.update_layout(
+        title=dict(
+            text=f'<b>{ticker}</b>',
+            font=dict(size=16, color='white'),
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis=dict(
+            title='',
+            gridcolor='rgba(255, 255, 255, 0.1)',
+            showgrid=True,
+            zeroline=False
+        ),
+        yaxis=dict(
+            title='',
+            gridcolor='rgba(255, 255, 255, 0.1)',
+            showgrid=True,
+            zeroline=False,
+            tickprefix='$'
+        ),
+        template='plotly_dark',
+        hovermode='x unified',
+        height=300,
+        plot_bgcolor='#0e1117',
+        paper_bgcolor='#0e1117',
+        showlegend=False,
+        margin=dict(l=50, r=20, t=40, b=30)
     )
     
     return fig
@@ -742,7 +790,6 @@ def main():
                         - Reduce el período de análisis a 3 años
                         """)
                     else:
-                        # Show data source badge
                         st.markdown(
                             f"✅ **Análisis completado para {ticker.upper()}** {get_data_source_badge(result['data_source'])}",
                             unsafe_allow_html=True
@@ -1081,6 +1128,32 @@ def main():
                             
                             st.dataframe(portfolio_detail, use_container_width=True, hide_index=True)
                             st.caption("📊 = dividendhistory.org | 📈 = yfinance")
+                        
+                        st.divider()
+                        
+                        # NEW: Individual Geraldine Weiss charts for each position
+                        st.subheader("📈 Análisis Geraldine Weiss por Posición")
+                        
+                        # Display charts in a 2-column layout
+                        for i in range(0, len(portfolio_results), 2):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                r = portfolio_results[i]
+                                st.plotly_chart(
+                                    plot_geraldine_weiss_compact(r['analysis_df'], r['ticker']),
+                                    use_container_width=True
+                                )
+                                st.caption(f"**{r['ticker']}** ({r['portfolio_weight']:.1f}%) - {r['signal']}")
+                            
+                            if i + 1 < len(portfolio_results):
+                                with col2:
+                                    r = portfolio_results[i + 1]
+                                    st.plotly_chart(
+                                        plot_geraldine_weiss_compact(r['analysis_df'], r['ticker']),
+                                        use_container_width=True
+                                    )
+                                    st.caption(f"**{r['ticker']}** ({r['portfolio_weight']:.1f}%) - {r['signal']}")
                         
                         st.divider()
                         
