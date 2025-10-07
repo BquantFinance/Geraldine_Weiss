@@ -3,7 +3,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import requests
@@ -11,7 +10,7 @@ from io import StringIO
 import warnings
 import pytz
 
-# Suprimir warnings de yfinance
+# Suprimir warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 # Configuración de la página
@@ -92,7 +91,7 @@ class DividendDataFetcher:
         self.cache = {}
     
     def fetch_dividends(self, ticker: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
-        """Obtiene dividendos mediante web scraping con debugging mejorado"""
+        """Obtiene dividendos mediante web scraping"""
         cache_key = f"{ticker}_{start_date}_{end_date}"
         if cache_key in self.cache:
             return self.cache[cache_key].copy()
@@ -100,76 +99,45 @@ class DividendDataFetcher:
         url = f"{self.base_url}/{ticker}/"
         
         try:
-            # Headers mejorados
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br',
                 'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0'
             }
             
-            # DEBUG: Mostrar URL
-            st.info(f"🔍 Intentando scraping: {url}")
-            
             response = self.session.get(url, headers=headers, timeout=20, allow_redirects=True)
-            
-            # DEBUG: Mostrar código de respuesta
-            st.write(f"📡 Status Code: {response.status_code}")
-            st.write(f"📏 Response Length: {len(response.text)} caracteres")
-            
             response.raise_for_status()
             
-            # DEBUG: Verificar si hay contenido
             if len(response.text) < 100:
-                st.error(f"❌ Respuesta muy corta: {len(response.text)} caracteres")
-                st.code(response.text[:500])
                 return pd.DataFrame()
             
-            # DEBUG: Mostrar primeros caracteres de la respuesta
-            with st.expander("🔍 Ver HTML recibido (primeros 1000 caracteres)"):
-                st.code(response.text[:1000])
-            
-            # Intentar parsear tablas
-            tables = pd.read_html(StringIO(response.text))
-            
-            st.write(f"📊 Tablas encontradas: {len(tables)}")
+            # Intentar parsear HTML
+            try:
+                tables = pd.read_html(StringIO(response.text))
+            except ImportError:
+                # Si no tiene lxml instalado, retornar vacío para usar fallback
+                return pd.DataFrame()
             
             if not tables:
-                st.error("❌ No se encontraron tablas en el HTML")
                 return pd.DataFrame()
             
-            # DEBUG: Mostrar información de cada tabla
+            # Buscar la tabla correcta
             df = None
-            for table_idx, table in enumerate(tables):
-                st.write(f"📋 Tabla {table_idx + 1}: {table.shape[0]} filas, {table.shape[1]} columnas")
-                st.write(f"Columnas: {list(table.columns)}")
-                
+            for table in tables:
                 temp_df = table.copy()
                 temp_df.columns = [str(col).strip() for col in temp_df.columns]
                 
-                # Si todas las columnas son números, probablemente la primera fila son los headers
+                # Si todas las columnas son números, usar primera fila como headers
                 if all(col.isdigit() for col in temp_df.columns):
-                    st.write("⚠️ Columnas son números, usando primera fila como headers")
                     temp_df.columns = temp_df.iloc[0].astype(str).str.strip().tolist()
                     temp_df = temp_df.iloc[1:].reset_index(drop=True)
-                    st.write(f"Nuevas columnas: {list(temp_df.columns)}")
                 
-                # Buscar la tabla correcta
                 if 'Ex-Dividend Date' in temp_df.columns or 'Cash Amount' in temp_df.columns:
-                    st.success(f"✅ Tabla {table_idx + 1} contiene datos de dividendos")
                     df = temp_df
                     break
-                else:
-                    st.write(f"⏭️ Tabla {table_idx + 1} no contiene columnas esperadas")
             
             if df is None:
-                st.error("❌ No se encontró tabla con datos de dividendos")
                 return pd.DataFrame()
             
             # Mapear columnas
@@ -179,13 +147,9 @@ class DividendDataFetcher:
                 'Cash Amount': 'amount',
                 '% Change': 'pct_change'
             }
-            
-            st.write(f"🔄 Mapeando columnas...")
             df = df.rename(columns=column_mapping)
             
             if 'ex_dividend_date' not in df.columns:
-                st.error(f"❌ Columna 'ex_dividend_date' no encontrada después del mapeo")
-                st.write(f"Columnas disponibles: {list(df.columns)}")
                 return pd.DataFrame()
             
             # Procesar fechas
@@ -203,42 +167,20 @@ class DividendDataFetcher:
             df = df[df['amount'].notna()]
             df = df[df['amount'] > 0]
             
-            st.write(f"✅ Datos válidos después de limpieza: {len(df)} registros")
-            
             # Filtrar por rango de fechas
             if start_date:
                 df = df[df['ex_dividend_date'] >= pd.to_datetime(start_date)]
             if end_date:
                 df = df[df['ex_dividend_date'] <= pd.to_datetime(end_date)]
             
-            st.write(f"📅 Datos en rango de fechas: {len(df)} registros")
-            
             df = df.sort_values('ex_dividend_date', ascending=False).reset_index(drop=True)
             
             if not df.empty:
                 self.cache[cache_key] = df.copy()
-                # Mostrar muestra de datos
-                with st.expander("👀 Ver muestra de datos obtenidos"):
-                    st.dataframe(df.head(10))
             
             return df
             
-        except requests.exceptions.Timeout:
-            st.error("❌ Timeout al conectar con dividendhistory.org")
-            return pd.DataFrame()
-        except requests.exceptions.ConnectionError:
-            st.error("❌ Error de conexión con dividendhistory.org")
-            return pd.DataFrame()
-        except requests.exceptions.HTTPError as e:
-            st.error(f"❌ HTTP Error: {e.response.status_code}")
-            if e.response.status_code == 404:
-                st.warning("La página no existe (404)")
-            return pd.DataFrame()
-        except Exception as e:
-            st.error(f"❌ Error inesperado: {str(e)}")
-            import traceback
-            with st.expander("🐛 Ver traceback completo"):
-                st.code(traceback.format_exc())
+        except Exception:
             return pd.DataFrame()
 
 
@@ -284,52 +226,41 @@ class GeraldineWeissAnalyzer:
         has_suffix = '.' in self.ticker
         
         if not has_suffix:
-            # SIN SUFIJO = USA → usar dividendhistory.org
-            st.info(f"🇺🇸 Ticker USA detectado ({self.ticker}). Usando dividendhistory.org...")
+            # SIN SUFIJO = USA → intentar dividendhistory.org primero
+            try:
+                df = self.dividend_fetcher.fetch_dividends(
+                    self.ticker, 
+                    start_date.strftime('%Y-%m-%d'),
+                    end_date.strftime('%Y-%m-%d')
+                )
+                
+                if not df.empty:
+                    return df
+            except Exception:
+                pass
             
-            with st.expander("🔧 Debug: Proceso de scraping de dividendhistory.org"):
-                try:
-                    df = self.dividend_fetcher.fetch_dividends(
-                        self.ticker, 
-                        start_date.strftime('%Y-%m-%d'),
-                        end_date.strftime('%Y-%m-%d')
-                    )
-                    
-                    if not df.empty:
-                        st.success(f"✅ Encontrados {len(df)} pagos de dividendos desde dividendhistory.org")
-                        return df
-                    else:
-                        st.warning(f"⚠️ dividendhistory.org no retornó datos. Intentando con yfinance como fallback...")
-                        # Fallback a yfinance si dividendhistory falla
-                        return self._fetch_from_yfinance(start_date)
-                except Exception as e:
-                    st.warning(f"⚠️ Error con dividendhistory.org: {str(e)}")
-                    st.info(f"🔄 Intentando con yfinance como fallback...")
-                    return self._fetch_from_yfinance(start_date)
+            # Fallback a yfinance
+            return self._fetch_from_yfinance(start_date)
         else:
-            # CON SUFIJO = Europa/Internacional → usar yfinance
-            st.info(f"🌍 Ticker internacional detectado ({self.ticker}). Usando yfinance...")
+            # CON SUFIJO = Europa/Internacional → usar yfinance directamente
             return self._fetch_from_yfinance(start_date)
     
     def _fetch_from_yfinance(self, start_date):
-        """Helper para obtener dividendos desde yfinance con manejo correcto de timezone"""
+        """Helper para obtener dividendos desde yfinance"""
         try:
             ticker_obj = yf.Ticker(self.ticker)
             divs = ticker_obj.dividends
             
             if not divs.empty:
-                # Convertir start_date a timezone-aware si divs tiene timezone
+                # Manejar timezone
                 if divs.index.tz is not None:
-                    # divs tiene timezone, hacer start_date timezone-aware
                     if start_date.tzinfo is None:
                         start_date = pytz.UTC.localize(start_date)
                     start_date = start_date.astimezone(divs.index.tz)
                 else:
-                    # divs no tiene timezone, hacer start_date naive
                     if start_date.tzinfo is not None:
                         start_date = start_date.replace(tzinfo=None)
                 
-                # Filtrar por rango de fechas
                 divs = divs[divs.index >= start_date]
                 
                 if not divs.empty:
@@ -338,18 +269,10 @@ class GeraldineWeissAnalyzer:
                         'amount': divs.values
                     })
                     df = df.sort_values('ex_dividend_date', ascending=False).reset_index(drop=True)
-                    st.success(f"✅ Encontrados {len(df)} pagos de dividendos desde yfinance")
                     return df
-                else:
-                    st.error(f"❌ No hay dividendos en el período de {self.years} años")
-                    return pd.DataFrame()
-            else:
-                st.error(f"❌ yfinance no retornó dividendos para {self.ticker}")
-                return pd.DataFrame()
-        except Exception as e:
-            st.error(f"❌ Error con yfinance: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc(), language='python')
+            
+            return pd.DataFrame()
+        except Exception:
             return pd.DataFrame()
     
     def calculate_annual_dividends(self, dividend_df):
@@ -415,7 +338,6 @@ class GeraldineWeissAnalyzer:
         lower_buy_zone = undervalued + (range_size * 0.2)
         upper_sell_zone = overvalued - (range_size * 0.2)
         
-        # Calcular score numérico (-100 a +100)
         if range_size > 0:
             score = ((overvalued - price) / range_size) * 200 - 100
         else:
@@ -434,35 +356,29 @@ class GeraldineWeissAnalyzer:
 
 
 def analyze_ticker_quick(ticker, years=6):
-    """Análisis rápido de un ticker para comparación"""
+    """Análisis rápido de un ticker"""
     try:
         analyzer = GeraldineWeissAnalyzer(ticker, years)
         
-        # Paso 1: Obtener datos de precio
         price_data = analyzer.fetch_price_data()
         if price_data is None or price_data.empty:
             return None
         
-        # Paso 2: Obtener datos de dividendos
         dividend_data = analyzer.fetch_dividend_data()
         if dividend_data.empty:
             return None
         
-        # Paso 3: Calcular dividendos anuales
         annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
         if annual_dividends.empty:
             return None
         
-        # Paso 4: Calcular bandas de valoración
         analysis_df = analyzer.calculate_valuation_bands(price_data, annual_dividends)
-        
         if analysis_df is None or analysis_df.empty:
             return None
         
         signal, description, score = analyzer.get_current_signal(analysis_df)
         latest = analysis_df.iloc[-1]
         
-        # Calcular CAGR
         cagr = 0
         if len(annual_dividends) > 1:
             try:
@@ -485,8 +401,7 @@ def analyze_ticker_quick(ticker, years=6):
             'analysis_df': analysis_df,
             'dividend_data': dividend_data
         }
-    except Exception as e:
-        st.error(f"Error en análisis de {ticker}: {str(e)}")
+    except Exception:
         return None
 
 
@@ -494,7 +409,6 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
     """Crea gráfico de Geraldine Weiss para análisis individual"""
     fig = go.Figure()
     
-    # Área de relleno entre bandas
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['overvalued'],
@@ -515,7 +429,6 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         hoverinfo='skip'
     ))
     
-    # Línea de sobrevaloración
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['overvalued'],
@@ -525,7 +438,6 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         hovertemplate='<b>Sobrevalorada:</b> $%{y:.2f}<extra></extra>'
     ))
     
-    # Línea de infravaloración
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['undervalued'],
@@ -535,7 +447,6 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         hovertemplate='<b>Infravalorada:</b> $%{y:.2f}<extra></extra>'
     ))
     
-    # Precio actual
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['Close'],
@@ -545,7 +456,6 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         hovertemplate='<b>Precio:</b> $%{y:.2f}<extra></extra>'
     ))
     
-    # Marcador precio actual
     latest = analysis_df.iloc[-1]
     fig.add_trace(go.Scatter(
         x=[analysis_df.index[-1]],
@@ -556,7 +466,6 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         hovertemplate=f'<b>Actual: ${latest["Close"]:.2f}</b><extra></extra>'
     ))
     
-    # Anotación precio actual
     fig.add_annotation(
         x=analysis_df.index[-1],
         y=latest['Close'],
@@ -718,7 +627,6 @@ def main():
     st.title("💎 Geraldine Weiss - Análisis de Dividendos")
     st.caption("Plataforma Profesional de Valoración por Dividendos y Estrategia de Inversión")
     
-    # Tabs principales
     main_tab1, main_tab2, main_tab3 = st.tabs([
         "🎯 Análisis Individual",
         "📊 Comparación Multi-Ticker",
@@ -762,10 +670,6 @@ def main():
                 - **Alta rentabilidad** = Infravalorada (Compra)
                 - **Baja rentabilidad** = Sobrevalorada (Venta)
                 - **Rango medio** = Valor razonable (Mantener)
-                
-                ℹ️ **Fuentes de datos:**
-                - Acciones USA: dividendhistory.org
-                - Acciones Europa: yfinance
                 """)
             
             with st.expander("📌 Sobre Geraldine Weiss"):
@@ -797,18 +701,15 @@ def main():
                         - El ticker no existe o está mal escrito
                         - La acción no paga dividendos
                         - No hay suficiente historial de datos ({years} años)
-                        - Problemas de conexión con las fuentes de datos
                         
                         💡 **Sugerencias:**
                         - Verifica que el ticker sea correcto (ej: KO, JNJ, PG)
                         - Para acciones europeas usa el sufijo: IBE.MC, SAN.MC
                         - Reduce el período de análisis a 3 años
-                        - Prueba con otra acción que pague dividendos regularmente
                         """)
                     else:
                         st.success(f"✅ Análisis completado para **{ticker.upper()}**")
                         
-                        # Señal principal
                         signal_colors = {
                             "COMPRA FUERTE": "#00ff88",
                             "COMPRA": "#51cf66",
@@ -825,7 +726,6 @@ def main():
                             unsafe_allow_html=True
                         )
                         
-                        # Métricas
                         st.subheader("📊 Métricas Clave")
                         
                         col1, col2, col3, col4 = st.columns(4)
@@ -842,7 +742,6 @@ def main():
                         
                         st.divider()
                         
-                        # Gráfico de Geraldine Weiss
                         st.subheader("📈 Análisis de Valoración")
                         st.plotly_chart(
                             plot_geraldine_weiss_individual(result['analysis_df'], ticker.upper()),
@@ -851,7 +750,6 @@ def main():
                         
                         st.divider()
                         
-                        # Interpretación
                         st.subheader("🎯 Interpretación")
                         
                         col1, col2 = st.columns(2)
@@ -934,20 +832,14 @@ def main():
                         st.warning(f"⚠️ No se pudieron analizar: {', '.join(failed_tickers)}")
                     
                     if not results:
-                        st.error("""
-                        ❌ **No se pudieron obtener datos para ningún ticker**
-                        
-                        Verifica que los tickers sean correctos y que las acciones paguen dividendos.
-                        """)
+                        st.error("❌ **No se pudieron obtener datos para ningún ticker**")
                     else:
                         st.success(f"✅ Análisis completado para {len(results)} acciones")
                         
-                        # Gráfico comparativo
                         st.plotly_chart(plot_comparison_chart(results), use_container_width=True)
                         
                         st.divider()
                         
-                        # Tabla comparativa
                         st.subheader("📋 Tabla Comparativa")
                         
                         comparison_df = pd.DataFrame([{
@@ -965,7 +857,6 @@ def main():
                         
                         st.dataframe(comparison_df, use_container_width=True, hide_index=True)
                         
-                        # Ranking
                         st.divider()
                         st.subheader("🏆 Ranking de Oportunidades")
                         
@@ -1097,7 +988,6 @@ def main():
                     else:
                         st.success(f"✅ Cartera analizada: {len(portfolio_results)} posiciones")
                         
-                        # Métricas ponderadas
                         total_yield = sum(r['yield'] * r['portfolio_weight'] / 100 for r in portfolio_results)
                         total_cagr = sum(r['cagr'] * r['portfolio_weight'] / 100 for r in portfolio_results)
                         avg_score = sum(r['score'] * r['portfolio_weight'] / 100 for r in portfolio_results)
@@ -1188,7 +1078,6 @@ def main():
             💡 **Tip:** Usa el botón "Cartera Ejemplo" para ver un ejemplo rápido
             """)
     
-    # Créditos
     st.markdown("""
     <div class='footer-credit'>
         Desarrollado por <a href='https://bquantfinance.com' target='_blank'>@Gsnchez | bquantfinance.com</a>
