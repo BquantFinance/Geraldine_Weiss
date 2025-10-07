@@ -197,21 +197,19 @@ class DividendDataFetcher:
 
 
 def get_real_current_price(ticker: str):
-    """Obtiene el precio real actual usando múltiples métodos en la moneda correcta"""
+    """
+    Obtiene el precio real actual en moneda local usando history()
+    Evita problemas de conversión de moneda usando solo datos históricos
+    """
     prices = []
     
     try:
         ticker_obj = yf.Ticker(ticker)
         
-        # Obtener moneda del ticker
-        currency = None
-        try:
-            info = ticker_obj.info
-            currency = info.get('currency', None)
-        except:
-            pass
+        # Usar SOLO history() - siempre devuelve precios en moneda local del exchange
+        # Esto evita problemas de conversión EUR/USD/GBP/JPY etc.
         
-        # Método 1: history(period='1d') - Siempre en moneda local
+        # Método 1: Último día de trading
         try:
             hist_1d = ticker_obj.history(period='1d')
             if not hist_1d.empty and 'Close' in hist_1d.columns:
@@ -221,7 +219,7 @@ def get_real_current_price(ticker: str):
         except:
             pass
         
-        # Método 2: history(period='5d') - Siempre en moneda local
+        # Método 2: Últimos 5 días
         try:
             hist_5d = ticker_obj.history(period='5d')
             if not hist_5d.empty and 'Close' in hist_5d.columns:
@@ -231,7 +229,7 @@ def get_real_current_price(ticker: str):
         except:
             pass
         
-        # Método 3: history(period='1mo') para tener más datos
+        # Método 3: Último mes (útil si mercado cerrado hoy)
         try:
             hist_1mo = ticker_obj.history(period='1mo')
             if not hist_1mo.empty and 'Close' in hist_1mo.columns:
@@ -241,26 +239,10 @@ def get_real_current_price(ticker: str):
         except:
             pass
         
-        # IGNORAR ticker.info para acciones no-USD - puede estar en moneda incorrecta
-        # Solo usar para tickers US sin sufijo
-        if '.' not in ticker:
-            try:
-                info = ticker_obj.info
-                price = (
-                    info.get('currentPrice') or 
-                    info.get('regularMarketPrice') or
-                    info.get('regularMarketPreviousClose') or
-                    info.get('previousClose')
-                )
-                if price and price > 0:
-                    prices.append(price)
-            except:
-                pass
-        
     except:
         pass
     
-    # Si tenemos precios, usar la mediana (más robusto que promedio)
+    # Usar mediana para eliminar outliers
     if len(prices) >= 2:
         return np.median(prices)
     elif len(prices) == 1:
@@ -279,12 +261,15 @@ class GeraldineWeissAnalyzer:
         self.data_source = None
         
     def fetch_price_data(self):
-        """Obtiene datos históricos de precios con corrección automática agresiva"""
+        """
+        Obtiene datos históricos de precios con validación consistente de moneda
+        Usa solo history() para mantener coherencia en moneda local
+        """
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
         try:
-            # Obtener datos históricos SIN auto_adjust
+            # Obtener datos históricos SIN auto_adjust para mantener precios originales
             data = yf.download(
                 self.ticker, 
                 start=start_date, 
@@ -311,22 +296,24 @@ class GeraldineWeissAnalyzer:
             
             data.index = pd.to_datetime(data.index)
             
-            # CORRECCIÓN DE PRECIO (solo si discrepancia significativa)
+            # VALIDACIÓN Y CORRECCIÓN CONSERVADORA
+            # Solo ajusta si hay discrepancia muy grande (>15%)
+            # Esto evita ajustes innecesarios por diferencias pequeñas
             if 'Close' in data.columns and len(data) > 0:
                 historical_latest = data['Close'].iloc[-1]
                 
-                # Obtener precio real usando history() - siempre en moneda local
+                # Obtener precio actual usando history() - siempre en moneda local
                 real_price = get_real_current_price(self.ticker)
                 
                 if real_price and real_price > 0 and historical_latest > 0:
                     discrepancy = abs(historical_latest - real_price) / real_price
                     
-                    # Solo ajustar si hay discrepancia >10% (evita ajustes por diferencias de timezone)
-                    # Menos agresivo para evitar problemas con monedas
-                    if discrepancy > 0.10:
+                    # Solo ajustar si discrepancia es muy grande (>15%)
+                    # Esto indica un problema real, no solo diferencias de horario
+                    if discrepancy > 0.15:
                         adjustment_factor = real_price / historical_latest
                         
-                        # Ajustar toda la serie temporal
+                        # Ajustar toda la serie temporal proporcionalmente
                         data['Close'] = data['Close'] * adjustment_factor
                         if 'Open' in data.columns:
                             data['Open'] = data['Open'] * adjustment_factor
@@ -343,11 +330,11 @@ class GeraldineWeissAnalyzer:
             return None
     
     def fetch_dividend_data(self):
-        """Obtiene datos de dividendos con lógica clara de fuentes"""
+        """Obtiene datos de dividendos priorizando yfinance"""
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
-        # Primero intentar siempre con yfinance (más confiable)
+        # Primero intentar con yfinance (más confiable y consistente)
         df = self._fetch_from_yfinance(start_date)
         if not df.empty:
             self.data_source = "yfinance"
@@ -369,12 +356,11 @@ class GeraldineWeissAnalyzer:
             except Exception:
                 pass
         
-        # Si todo falla, retornar vacío
         self.data_source = "none"
         return pd.DataFrame()
     
     def _fetch_from_yfinance(self, start_date):
-        """Helper para obtener dividendos desde yfinance"""
+        """Obtiene dividendos desde yfinance"""
         try:
             ticker_obj = yf.Ticker(self.ticker)
             
@@ -424,7 +410,7 @@ class GeraldineWeissAnalyzer:
         dividend_df = dividend_df.copy()
         dividend_df['year'] = dividend_df['ex_dividend_date'].dt.year
         
-        # Filtrar outliers
+        # Filtrar outliers usando desviación estándar
         mean_div = dividend_df['amount'].mean()
         std_div = dividend_df['amount'].std()
         if std_div > 0:
@@ -435,7 +421,7 @@ class GeraldineWeissAnalyzer:
         annual = dividend_df.groupby('year')['amount'].sum().reset_index()
         annual.columns = ['year', 'annual_dividend']
         
-        # Filtrar años con dividendos muy bajos (posibles errores)
+        # Filtrar años con dividendos anormalmente bajos
         if len(annual) > 0:
             median_div = annual['annual_dividend'].median()
             annual = annual[annual['annual_dividend'] > median_div * 0.1]
@@ -443,7 +429,7 @@ class GeraldineWeissAnalyzer:
         return annual
     
     def calculate_valuation_bands(self, prices, annual_dividends):
-        """Calcula bandas de sobrevaloración e infravaloración"""
+        """Calcula bandas de valoración según método Geraldine Weiss"""
         prices = prices.copy()
         
         if 'Close' not in prices.columns:
@@ -461,7 +447,7 @@ class GeraldineWeissAnalyzer:
         
         merged['div_yield'] = merged['annual_dividend'] / merged['Close']
         
-        # Filtrar yields extremos (outliers)
+        # Filtrar yields extremos
         yield_median = merged['div_yield'].median()
         yield_std = merged['div_yield'].std()
         if yield_std > 0:
@@ -472,8 +458,9 @@ class GeraldineWeissAnalyzer:
         if merged.empty:
             return None
         
-        max_yield = merged['div_yield'].quantile(0.95)  # Usar percentil 95 en vez de max
-        min_yield = merged['div_yield'].quantile(0.05)  # Usar percentil 5 en vez de min
+        # Usar percentiles en vez de min/max para evitar outliers
+        max_yield = merged['div_yield'].quantile(0.95)
+        min_yield = merged['div_yield'].quantile(0.05)
         
         if max_yield == 0 or min_yield == 0 or max_yield <= min_yield:
             return None
@@ -484,7 +471,7 @@ class GeraldineWeissAnalyzer:
         return merged
     
     def get_current_signal(self, analysis_df):
-        """Determina la señal actual de compra/venta"""
+        """Determina la señal de inversión actual"""
         if analysis_df is None or analysis_df.empty:
             return "DESCONOCIDO", "Datos insuficientes", 0
         
@@ -567,7 +554,7 @@ def analyze_ticker_quick(ticker, years=6):
 
 
 def create_weighted_portfolio_analysis(portfolio_results):
-    """Crea un análisis ponderado de cartera combinando todas las posiciones"""
+    """Crea análisis ponderado de cartera"""
     
     all_dates = set()
     for r in portfolio_results:
@@ -615,7 +602,7 @@ def create_weighted_portfolio_analysis(portfolio_results):
 
 
 def get_data_source_badge(source):
-    """Genera un badge HTML para la fuente de datos"""
+    """Genera badge HTML para fuente de datos"""
     if source == "dividendhistory.org":
         return '<span class="data-source-badge source-dividendhistory">📊 dividendhistory.org</span>'
     elif source == "yfinance":
@@ -625,7 +612,7 @@ def get_data_source_badge(source):
 
 
 def plot_geraldine_weiss_individual(analysis_df, ticker):
-    """Crea gráfico de Geraldine Weiss para análisis individual"""
+    """Gráfico de valoración Geraldine Weiss individual"""
     fig = go.Figure()
     
     fig.add_trace(go.Scatter(
@@ -716,11 +703,10 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
             zeroline=False
         ),
         yaxis=dict(
-            title='Precio (USD)',
+            title='Precio',
             gridcolor='rgba(255, 255, 255, 0.1)',
             showgrid=True,
-            zeroline=False,
-            tickprefix='$'
+            zeroline=False
         ),
         template='plotly_dark',
         hovermode='x unified',
@@ -743,7 +729,7 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
 
 
 def plot_portfolio_geraldine_weiss(portfolio_df):
-    """Crea gráfico de Geraldine Weiss para cartera ponderada"""
+    """Gráfico de valoración de cartera ponderada"""
     fig = go.Figure()
     
     fig.add_trace(go.Scatter(
@@ -834,11 +820,10 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
             zeroline=False
         ),
         yaxis=dict(
-            title='Valor Ponderado (USD)',
+            title='Valor Ponderado',
             gridcolor='rgba(255, 255, 255, 0.1)',
             showgrid=True,
-            zeroline=False,
-            tickprefix='$'
+            zeroline=False
         ),
         template='plotly_dark',
         hovermode='x unified',
@@ -915,8 +900,7 @@ def plot_comparison_chart(results):
             title=''
         ),
         yaxis=dict(
-            title='Precio (USD)',
-            tickprefix='$'
+            title='Precio'
         ),
         template='plotly_dark',
         height=500,
@@ -1022,8 +1006,10 @@ def main():
             st.divider()
             
             st.markdown("**🎯 Tickers Sugeridos**")
-            st.caption("**USA:** KO · JNJ · PG · MMM · CAT · XOM · CVX")
-            st.caption("**Europa:** IBE.MC · SAN.MC · TEF.MC · REP.MC")
+            st.caption("**USA:** KO · JNJ · PG · MMM · CAT · XOM")
+            st.caption("**Europa:** IBE.MC · SAN.MC · TEF.MC · VOW3.DE")
+            st.caption("**UK:** ULVR.L · BP.L · HSBA.L")
+            st.caption("**Canadá:** RY.TO · TD.TO · ENB.TO")
         
         with col_main:
             if analyze_button and ticker:
@@ -1040,8 +1026,12 @@ def main():
                         - No hay suficiente historial de datos ({years} años)
                         
                         💡 **Sugerencias:**
-                        - Verifica que el ticker sea correcto (ej: KO, JNJ, PG)
-                        - Para acciones europeas usa el sufijo: IBE.MC, SAN.MC
+                        - Verifica que el ticker sea correcto
+                        - Para mercados internacionales usa el sufijo correcto:
+                          - España: .MC (IBE.MC)
+                          - UK: .L (BP.L)
+                          - Alemania: .DE (VOW3.DE)
+                          - Canadá: .TO (RY.TO)
                         - Reduce el período de análisis a 3 años
                         - Asegúrate de que la empresa pague dividendos regularmente
                         """)
@@ -1062,7 +1052,7 @@ def main():
                         st.markdown(
                             f"""<div class='big-signal' style='border-color: {signal_colors.get(result['signal'], "#ffffff")}; color: {signal_colors.get(result['signal'], "#ffffff")}'>
                             {result['signal']}<br>
-                            <div style='font-size: 18px; margin-top: 10px;'>Precio: ${result['price']:.2f}</div>
+                            <div style='font-size: 18px; margin-top: 10px;'>Precio: {result['price']:.2f}</div>
                             </div>""",
                             unsafe_allow_html=True
                         )
@@ -1074,11 +1064,11 @@ def main():
                         upside_undervalued = ((result['undervalued']/result['price'] - 1) * 100)
                         upside_overvalued = ((result['overvalued']/result['price'] - 1) * 100)
                         
-                        col1.metric("💵 Precio Actual", f"${result['price']:.2f}")
+                        col1.metric("💵 Precio Actual", f"{result['price']:.2f}")
                         col2.metric("📊 Rentabilidad", f"{result['yield']:.2f}%")
-                        col3.metric("🟢 Zona Infravalorada", f"${result['undervalued']:.2f}", 
+                        col3.metric("🟢 Zona Infravalorada", f"{result['undervalued']:.2f}", 
                                    delta=f"{upside_undervalued:.1f}%", delta_color="inverse")
-                        col4.metric("🔴 Zona Sobrevalorada", f"${result['overvalued']:.2f}",
+                        col4.metric("🔴 Zona Sobrevalorada", f"{result['overvalued']:.2f}",
                                    delta=f"{upside_overvalued:.1f}%")
                         
                         st.divider()
@@ -1123,8 +1113,10 @@ def main():
                 Introduce un ticker en la barra lateral y haz clic en **"Analizar Acción"** para comenzar.
                 
                 **Ejemplo de tickers:**
-                - **USA:** KO (Coca-Cola), JNJ (Johnson & Johnson), PG (Procter & Gamble)
-                - **Europa:** IBE.MC (Iberdrola), SAN.MC (Santander), TEF.MC (Telefónica)
+                - **USA:** KO, JNJ, PG, MMM
+                - **Europa:** IBE.MC, SAN.MC, VOW3.DE
+                - **UK:** BP.L, ULVR.L, HSBA.L
+                - **Canadá:** RY.TO, TD.TO, ENB.TO
                 """)
     
     # ==================== TAB 2: COMPARACIÓN MULTI-TICKER ====================
@@ -1186,10 +1178,10 @@ def main():
                         comparison_df = pd.DataFrame([{
                             'Ticker': r['ticker'],
                             'Fuente': '📊' if r['data_source'] == 'dividendhistory.org' else '📈',
-                            'Precio': f"${r['price']:.2f}",
+                            'Precio': f"{r['price']:.2f}",
                             'Yield': f"{r['yield']:.2f}%",
-                            'Infravalorada': f"${r['undervalued']:.2f}",
-                            'Sobrevalorada': f"${r['overvalued']:.2f}",
+                            'Infravalorada': f"{r['undervalued']:.2f}",
+                            'Sobrevalorada': f"{r['overvalued']:.2f}",
                             'Señal': r['signal'],
                             'Score': f"{r['score']:.1f}",
                             'CAGR Div.': f"{r['cagr']:.1f}%"
