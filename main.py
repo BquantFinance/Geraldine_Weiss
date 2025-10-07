@@ -8,6 +8,10 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import requests
 from io import StringIO
+import warnings
+
+# Suprimir warnings de yfinance
+warnings.filterwarnings('ignore', category=FutureWarning)
 
 # Configuración de la página
 st.set_page_config(
@@ -188,7 +192,14 @@ class GeraldineWeissAnalyzer:
         start_date = end_date - relativedelta(years=self.years)
         
         try:
-            data = yf.download(self.ticker, start=start_date, end=end_date, progress=False)
+            data = yf.download(
+                self.ticker, 
+                start=start_date, 
+                end=end_date, 
+                progress=False,
+                auto_adjust=True
+            )
+            
             if data.empty:
                 return None
             
@@ -319,43 +330,52 @@ class GeraldineWeissAnalyzer:
 
 def analyze_ticker_quick(ticker, years=6):
     """Análisis rápido de un ticker para comparación"""
-    analyzer = GeraldineWeissAnalyzer(ticker, years)
-    
-    price_data = analyzer.fetch_price_data()
-    dividend_data = analyzer.fetch_dividend_data()
-    
-    if price_data is None or price_data.empty or dividend_data.empty:
+    try:
+        analyzer = GeraldineWeissAnalyzer(ticker, years)
+        
+        price_data = analyzer.fetch_price_data()
+        if price_data is None or price_data.empty:
+            return None
+        
+        dividend_data = analyzer.fetch_dividend_data()
+        if dividend_data.empty:
+            return None
+        
+        annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
+        if annual_dividends.empty:
+            return None
+        
+        analysis_df = analyzer.calculate_valuation_bands(price_data, annual_dividends)
+        
+        if analysis_df is None or analysis_df.empty:
+            return None
+        
+        signal, description, score = analyzer.get_current_signal(analysis_df)
+        latest = analysis_df.iloc[-1]
+        
+        # Calcular CAGR si hay suficientes datos
+        cagr = 0
+        if len(annual_dividends) > 1:
+            cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
+                    annual_dividends['annual_dividend'].iloc[0]) ** 
+                   (1 / (len(annual_dividends) - 1)) - 1) * 100
+        
+        return {
+            'ticker': ticker,
+            'price': latest['Close'],
+            'yield': latest['div_yield'] * 100,
+            'undervalued': latest['undervalued'],
+            'overvalued': latest['overvalued'],
+            'signal': signal,
+            'score': score,
+            'annual_dividend': latest['annual_dividend'],
+            'cagr': cagr,
+            'analysis_df': analysis_df,
+            'dividend_data': dividend_data
+        }
+    except Exception as e:
+        # En caso de error, retornar None
         return None
-    
-    annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
-    analysis_df = analyzer.calculate_valuation_bands(price_data, annual_dividends)
-    
-    if analysis_df is None or analysis_df.empty:
-        return None
-    
-    signal, description, score = analyzer.get_current_signal(analysis_df)
-    latest = analysis_df.iloc[-1]
-    
-    # Calcular CAGR si hay suficientes datos
-    cagr = 0
-    if len(annual_dividends) > 1:
-        cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
-                annual_dividends['annual_dividend'].iloc[0]) ** 
-               (1 / (len(annual_dividends) - 1)) - 1) * 100
-    
-    return {
-        'ticker': ticker,
-        'price': latest['Close'],
-        'yield': latest['div_yield'] * 100,
-        'undervalued': latest['undervalued'],
-        'overvalued': latest['overvalued'],
-        'signal': signal,
-        'score': score,
-        'annual_dividend': latest['annual_dividend'],
-        'cagr': cagr,
-        'analysis_df': analysis_df,
-        'dividend_data': dividend_data
-    }
 
 
 def plot_comparison_chart(results):
@@ -537,7 +557,21 @@ def main():
                     result = analyze_ticker_quick(ticker.upper(), years)
                     
                     if result is None:
-                        st.error("❌ No se pudieron obtener datos suficientes. Verifica el ticker o intenta con otro período.")
+                        st.error(f"""
+                        ❌ **No se pudieron obtener datos suficientes para {ticker.upper()}**
+                        
+                        Posibles causas:
+                        - El ticker no existe o está mal escrito
+                        - La acción no paga dividendos
+                        - No hay suficiente historial de datos ({years} años)
+                        - Problemas de conexión con las fuentes de datos
+                        
+                        💡 **Sugerencias:**
+                        - Verifica que el ticker sea correcto (ej: KO, JNJ, PG)
+                        - Para acciones europeas usa el sufijo: IBE.MC, SAN.MC
+                        - Reduce el período de análisis a 3 años
+                        - Prueba con otra acción que pague dividendos regularmente
+                        """)
                     else:
                         # Mensaje de éxito
                         st.success(f"✅ Análisis completado para **{ticker.upper()}**")
@@ -611,22 +645,35 @@ def main():
             elif len(tickers_list) > 6:
                 st.warning("⚠️ Máximo 6 tickers. Se analizarán los primeros 6.")
                 tickers_list = tickers_list[:6]
-            
-            with st.spinner(f'🔄 Analizando {len(tickers_list)} acciones...'):
-                results = []
-                progress_bar = st.progress(0)
-                
-                for i, ticker in enumerate(tickers_list):
-                    result = analyze_ticker_quick(ticker, years_comp)
-                    if result:
-                        results.append(result)
-                    progress_bar.progress((i + 1) / len(tickers_list))
-                
-                progress_bar.empty()
-                
-                if not results:
-                    st.error("❌ No se pudieron obtener datos para ningún ticker")
-                else:
+            else:
+                with st.spinner(f'🔄 Analizando {len(tickers_list)} acciones...'):
+                    results = []
+                    failed_tickers = []
+                    progress_bar = st.progress(0)
+                    
+                    for i, ticker in enumerate(tickers_list):
+                        result = analyze_ticker_quick(ticker, years_comp)
+                        if result:
+                            results.append(result)
+                        else:
+                            failed_tickers.append(ticker)
+                        progress_bar.progress((i + 1) / len(tickers_list))
+                    
+                    progress_bar.empty()
+                    
+                    if failed_tickers:
+                        st.warning(f"⚠️ No se pudieron analizar: {', '.join(failed_tickers)}")
+                    
+                    if not results:
+                        st.error("""
+                        ❌ **No se pudieron obtener datos para ningún ticker**
+                        
+                        Verifica que:
+                        - Los tickers sean correctos
+                        - Las acciones paguen dividendos
+                        - Haya suficiente historial
+                        """)
+                    else:
                     st.success(f"✅ Análisis completado para {len(results)} acciones")
                     
                     # Gráfico comparativo
@@ -786,6 +833,7 @@ def main():
                     
                     # Analizar cada ticker
                     portfolio_results = []
+                    failed_tickers = []
                     progress_bar = st.progress(0)
                     
                     for i, row in portfolio_data.iterrows():
@@ -793,12 +841,24 @@ def main():
                         if result:
                             result['portfolio_weight'] = row['weight']
                             portfolio_results.append(result)
+                        else:
+                            failed_tickers.append(row['ticker'])
                         progress_bar.progress((i + 1) / len(portfolio_data))
                     
                     progress_bar.empty()
                     
+                    if failed_tickers:
+                        st.warning(f"⚠️ No se pudieron analizar: {', '.join(failed_tickers)}")
+                    
                     if not portfolio_results:
-                        st.error("❌ No se pudieron obtener datos para ningún ticker de la cartera")
+                        st.error("""
+                        ❌ **No se pudieron obtener datos para ningún ticker de la cartera**
+                        
+                        Verifica que:
+                        - Los tickers sean correctos
+                        - Las acciones paguen dividendos
+                        - Haya conexión a internet
+                        """)
                     else:
                         st.success(f"✅ Cartera analizada: {len(portfolio_results)} posiciones")
                         
