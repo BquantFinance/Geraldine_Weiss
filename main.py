@@ -210,32 +210,47 @@ class GeraldineWeissAnalyzer:
         
         is_european = self.is_european_ticker(self.ticker)
         
+        # Estrategia 1: Intentar dividendhistory.org solo para USA
         if not is_european:
-            df = self.dividend_fetcher.fetch_dividends(
-                self.ticker, 
-                start_date.strftime('%Y-%m-%d'),
-                end_date.strftime('%Y-%m-%d')
-            )
-            
-            if not df.empty:
-                return df
+            try:
+                df = self.dividend_fetcher.fetch_dividends(
+                    self.ticker, 
+                    start_date.strftime('%Y-%m-%d'),
+                    end_date.strftime('%Y-%m-%d')
+                )
+                
+                if not df.empty:
+                    st.info(f"✅ Datos de dividendos obtenidos de dividendhistory.org")
+                    return df
+            except Exception as e:
+                st.warning(f"⚠️ dividendhistory.org no disponible: {str(e)[:50]}")
         
+        # Estrategia 2: Usar yfinance como fallback o primera opción para Europa
         try:
+            st.info(f"🔄 Obteniendo dividendos desde yfinance...")
             ticker_obj = yf.Ticker(self.ticker)
             divs = ticker_obj.dividends
             
             if not divs.empty:
-                df = pd.DataFrame({
-                    'ex_dividend_date': divs.index,
-                    'amount': divs.values
-                })
-                df = df[df['ex_dividend_date'] >= start_date]
+                # Filtrar por rango de fechas
+                divs = divs[divs.index >= start_date]
                 
-                if not df.empty:
+                if not divs.empty:
+                    df = pd.DataFrame({
+                        'ex_dividend_date': divs.index,
+                        'amount': divs.values
+                    })
+                    df = df.sort_values('ex_dividend_date', ascending=False).reset_index(drop=True)
+                    st.success(f"✅ Encontrados {len(df)} pagos de dividendos desde yfinance")
                     return df
-        except:
-            pass
+                else:
+                    st.warning(f"⚠️ No hay dividendos en el rango de fechas ({self.years} años)")
+            else:
+                st.warning(f"⚠️ yfinance no retornó dividendos para {self.ticker}")
+        except Exception as e:
+            st.error(f"❌ Error al obtener dividendos de yfinance: {str(e)}")
         
+        st.error(f"❌ No se pudieron obtener dividendos de ninguna fuente para {self.ticker}")
         return pd.DataFrame()
     
     def calculate_annual_dividends(self, dividend_df):
