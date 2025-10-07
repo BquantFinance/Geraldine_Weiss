@@ -260,58 +260,7 @@ class GeraldineWeissAnalyzer:
         self.dividend_fetcher = DividendDataFetcher()
         self.data_source = None
         
-    def fetch_price_data(self):
-        """
-        Obtiene datos históricos de precios con validación consistente de moneda
-        Usa solo history() para mantener coherencia en moneda local
-        """
-        end_date = datetime.now()
-        start_date = end_date - relativedelta(years=self.years)
-        
-        try:
-            # Obtener datos históricos SIN auto_adjust para mantener precios originales
-            data = yf.download(
-                self.ticker, 
-                start=start_date, 
-                end=end_date, 
-                progress=False,
-                auto_adjust=False
-            )
-            
-            if data.empty:
-                # Fallback: intentar con auto_adjust=True
-                data = yf.download(
-                    self.ticker, 
-                    start=start_date, 
-                    end=end_date, 
-                    progress=False,
-                    auto_adjust=True
-                )
-            
-            if data.empty:
-                return None
-            
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = data.columns.get_level_values(0)
-            
-            data.index = pd.to_datetime(data.index)
-            
-            # VALIDACIÓN Y CORRECCIÓN CONSERVADORA
-            # Solo ajusta si hay discrepancia muy grande (>15%)
-            # Esto evita ajustes innecesarios por diferencias pequeñas
-            if 'Close' in data.columns and len(data) > 0:
-                historical_latest = data['Close'].iloc[-1]
-                
-                # Obtener precio actual usando history() - siempre en moneda local
-                real_price = get_real_current_price(self.ticker)
-                
-                if real_price and real_price > 0 and historical_latest > 0:
-                    discrepancy = abs(historical_latest - real_price) / real_price
-                    
-                    # Solo ajustar si discrepancia es muy grande (>15%)
-                    # Esto indica un problema real, no solo diferencias de horario
-                    if discrepancy > 0.15:
-                        adjustment_factor = real_price / historical_latest
+_price / historical_latest
                         
                         # Ajustar toda la serie temporal proporcionalmente
                         data['Close'] = data['Close'] * adjustment_factor
