@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS minimalista para tema oscuro
+# CSS para tema oscuro
 st.markdown("""
 <style>
     .main {
@@ -291,51 +291,126 @@ def plot_geraldine_weiss(analysis_df, ticker):
     """Crea gráfico de Geraldine Weiss"""
     fig = go.Figure()
     
+    # Área de relleno entre bandas
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['overvalued'],
-        name='Sobrevalorada',
-        line=dict(color='#ff6b6b', width=3),
-        mode='lines'
+        name='Zona Sobrevalorada',
+        line=dict(color='rgba(255, 107, 107, 0)', width=0),
+        showlegend=False,
+        hoverinfo='skip'
     ))
     
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['undervalued'],
-        name='Infravalorada',
-        line=dict(color='#00ff88', width=3),
-        mode='lines',
+        name='Rango de Valor Razonable',
         fill='tonexty',
-        fillcolor='rgba(0, 255, 136, 0.1)'
+        fillcolor='rgba(0, 255, 136, 0.1)',
+        line=dict(color='rgba(0, 255, 136, 0)', width=0),
+        showlegend=True,
+        hoverinfo='skip'
     ))
     
+    # Línea de sobrevaloración
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['overvalued'],
+        name='Sobrevalorada',
+        line=dict(color='#ff6b6b', width=3, dash='solid'),
+        mode='lines',
+        hovertemplate='<b>Sobrevalorada:</b> $%{y:.2f}<extra></extra>'
+    ))
+    
+    # Línea de infravaloración
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['undervalued'],
+        name='Infravalorada',
+        line=dict(color='#00ff88', width=3, dash='solid'),
+        mode='lines',
+        hovertemplate='<b>Infravalorada:</b> $%{y:.2f}<extra></extra>'
+    ))
+    
+    # Precio actual con gradiente
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['Close'],
         name='Precio Actual',
         line=dict(color='#00d4ff', width=4),
-        mode='lines'
+        mode='lines',
+        hovertemplate='<b>Precio:</b> $%{y:.2f}<extra></extra>'
     ))
     
+    # Marcador para el precio actual
     latest = analysis_df.iloc[-1]
     fig.add_trace(go.Scatter(
         x=[analysis_df.index[-1]],
         y=[latest['Close']],
         mode='markers',
-        marker=dict(size=15, color='#00d4ff', line=dict(color='white', width=2)),
+        marker=dict(
+            size=16,
+            color='#00d4ff',
+            line=dict(color='white', width=3),
+            symbol='circle'
+        ),
         showlegend=False,
-        hovertemplate=f'<b>Actual: ${latest["Close"]:.2f}</b><extra></extra>'
+        hovertemplate=f'<b>Precio Actual:</b> ${latest["Close"]:.2f}<extra></extra>'
     ))
     
+    # Añadir anotación para el precio actual
+    fig.add_annotation(
+        x=analysis_df.index[-1],
+        y=latest['Close'],
+        text=f"${latest['Close']:.2f}",
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=1,
+        arrowwidth=2,
+        arrowcolor="#00d4ff",
+        ax=40,
+        ay=-40,
+        bgcolor="rgba(0, 212, 255, 0.2)",
+        bordercolor="#00d4ff",
+        borderwidth=2,
+        font=dict(size=14, color="white")
+    )
+    
     fig.update_layout(
-        title=f'{ticker} - Modelo de Valoración Geraldine Weiss',
-        xaxis_title='Fecha',
-        yaxis_title='Precio (USD)',
+        title=dict(
+            text=f'<b>{ticker}</b> - Modelo de Valoración Geraldine Weiss',
+            font=dict(size=24, color='white'),
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis=dict(
+            title='',
+            gridcolor='rgba(255, 255, 255, 0.1)',
+            showgrid=True,
+            zeroline=False
+        ),
+        yaxis=dict(
+            title='Precio (USD)',
+            gridcolor='rgba(255, 255, 255, 0.1)',
+            showgrid=True,
+            zeroline=False,
+            tickprefix='$'
+        ),
         template='plotly_dark',
         hovermode='x unified',
-        height=500,
+        height=550,
         plot_bgcolor='#0e1117',
-        paper_bgcolor='#0e1117'
+        paper_bgcolor='#0e1117',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor='rgba(30, 40, 57, 0.8)',
+            bordercolor='rgba(255, 255, 255, 0.2)',
+            borderwidth=1
+        )
     )
     
     return fig
@@ -348,24 +423,67 @@ def plot_dividend_history(dividend_df, ticker):
     
     fig = go.Figure()
     
-    colors = ['#00ff88' if i % 2 == 0 else '#00d4ff' for i in range(len(dividend_df))]
+    # Crear gradiente de colores más sofisticado
+    n = len(dividend_df)
+    colors = []
+    for i in range(n):
+        # Gradiente de verde a cyan
+        ratio = i / max(n - 1, 1)
+        colors.append(f'rgba({int(0 + 0 * ratio)}, {int(255 - 43 * ratio)}, {int(136 + 119 * ratio)}, 0.8)')
     
     fig.add_trace(go.Bar(
         x=dividend_df['ex_dividend_date'],
         y=dividend_df['amount'],
         name='Dividendo',
-        marker=dict(color=colors),
-        hovertemplate='<b>%{x|%Y-%m-%d}</b><br>Monto: $%{y:.3f}<extra></extra>'
+        marker=dict(
+            color=colors,
+            line=dict(color='rgba(255, 255, 255, 0.3)', width=1)
+        ),
+        hovertemplate='<b>Fecha:</b> %{x|%Y-%m-%d}<br><b>Monto:</b> $%{y:.3f}<extra></extra>'
     ))
     
+    # Añadir línea de tendencia
+    if len(dividend_df) > 1:
+        fig.add_trace(go.Scatter(
+            x=dividend_df['ex_dividend_date'],
+            y=dividend_df['amount'].rolling(window=4, min_periods=1).mean(),
+            name='Tendencia',
+            line=dict(color='#ffd93d', width=2, dash='dash'),
+            mode='lines',
+            hovertemplate='<b>Media móvil:</b> $%{y:.3f}<extra></extra>'
+        ))
+    
     fig.update_layout(
-        title=f'{ticker} - Historial de Pagos de Dividendos',
-        xaxis_title='Fecha',
-        yaxis_title='Monto del Dividendo (USD)',
+        title=dict(
+            text=f'{ticker} - Historial de Pagos de Dividendos',
+            font=dict(size=20, color='white')
+        ),
+        xaxis=dict(
+            title='Fecha',
+            gridcolor='rgba(255, 255, 255, 0.1)',
+            showgrid=True,
+            zeroline=False
+        ),
+        yaxis=dict(
+            title='Monto del Dividendo (USD)',
+            gridcolor='rgba(255, 255, 255, 0.1)',
+            showgrid=True,
+            zeroline=False,
+            tickprefix='$'
+        ),
         template='plotly_dark',
-        height=450,
+        height=500,
         plot_bgcolor='#0e1117',
-        paper_bgcolor='#0e1117'
+        paper_bgcolor='#0e1117',
+        hovermode='x unified',
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
     )
     
     return fig
@@ -378,25 +496,36 @@ def plot_dividend_growth(annual_div_df, ticker):
     
     fig = make_subplots(
         rows=2, cols=1,
-        subplot_titles=('Dividendos Anuales', 'Crecimiento Interanual (%)'),
+        subplot_titles=(
+            '<b>Dividendos Anuales</b>',
+            '<b>Crecimiento Interanual (%)</b>'
+        ),
         vertical_spacing=0.15,
         row_heights=[0.6, 0.4]
     )
     
+    # Dividendos anuales con área de relleno
     fig.add_trace(
         go.Scatter(
             x=annual_div_df['year'],
             y=annual_div_df['annual_dividend'],
             mode='lines+markers',
             name='Dividendo Anual',
-            line=dict(color='#00ff88', width=3),
-            marker=dict(size=10, color='#00ff88'),
+            line=dict(color='#00ff88', width=4),
+            marker=dict(
+                size=12,
+                color='#00ff88',
+                line=dict(color='white', width=2),
+                symbol='circle'
+            ),
             fill='tozeroy',
-            fillcolor='rgba(0, 255, 136, 0.1)'
+            fillcolor='rgba(0, 255, 136, 0.15)',
+            hovertemplate='<b>Año:</b> %{x}<br><b>Dividendo:</b> $%{y:.2f}<extra></extra>'
         ),
         row=1, col=1
     )
     
+    # Crecimiento con colores condicionales
     if len(annual_div_df) > 1:
         growth = annual_div_df['annual_dividend'].pct_change() * 100
         colors = ['#00ff88' if x >= 0 else '#ff6b6b' for x in growth]
@@ -406,21 +535,62 @@ def plot_dividend_growth(annual_div_df, ticker):
                 x=annual_div_df['year'],
                 y=growth,
                 name='Crecimiento %',
-                marker_color=colors
+                marker=dict(
+                    color=colors,
+                    line=dict(color='rgba(255, 255, 255, 0.2)', width=1)
+                ),
+                hovertemplate='<b>Año:</b> %{x}<br><b>Crecimiento:</b> %{y:.1f}%<extra></extra>'
             ),
             row=2, col=1
         )
     
-    fig.update_xaxes(title_text="Año", row=2, col=1)
-    fig.update_yaxes(title_text="Dividendo ($)", row=1, col=1)
-    fig.update_yaxes(title_text="Crecimiento (%)", row=2, col=1)
+    # Actualizar ejes
+    fig.update_xaxes(
+        gridcolor='rgba(255, 255, 255, 0.1)',
+        showgrid=True,
+        zeroline=False,
+        row=1, col=1
+    )
+    fig.update_xaxes(
+        title_text="Año",
+        gridcolor='rgba(255, 255, 255, 0.1)',
+        showgrid=False,
+        zeroline=False,
+        row=2, col=1
+    )
+    
+    fig.update_yaxes(
+        title_text="Dividendo (USD)",
+        gridcolor='rgba(255, 255, 255, 0.1)',
+        showgrid=True,
+        zeroline=False,
+        tickprefix='$',
+        row=1, col=1
+    )
+    fig.update_yaxes(
+        title_text="Crecimiento (%)",
+        gridcolor='rgba(255, 255, 255, 0.1)',
+        showgrid=True,
+        zeroline=True,
+        zerolinecolor='rgba(255, 255, 255, 0.3)',
+        zerolinewidth=2,
+        ticksuffix='%',
+        row=2, col=1
+    )
     
     fig.update_layout(
-        height=600,
+        height=650,
         template='plotly_dark',
         showlegend=False,
         plot_bgcolor='#0e1117',
-        paper_bgcolor='#0e1117'
+        paper_bgcolor='#0e1117',
+        hovermode='x',
+        title=dict(
+            text=f'<b>{ticker} - Análisis de Crecimiento de Dividendos</b>',
+            font=dict(size=20, color='white'),
+            x=0.5,
+            xanchor='center'
+        )
     )
     
     return fig
@@ -476,10 +646,12 @@ def main():
             - ✓ Aristócratas de Dividendos
             - ✓ Pagadores estables de dividendos
             - ✓ Acciones blue-chip
-            
-            **Candidatos ideales:**  
-            KO, JNJ, PG, MMM, CAT, XOM, CVX, T
             """)
+        
+        st.divider()
+        
+        st.markdown("**🎯 Tickers Sugeridos**")
+        st.caption("KO · JNJ · PG · MMM · CAT · XOM · CVX · T")
     
     # Contenido principal
     if analyze_button and ticker:
@@ -539,19 +711,31 @@ def main():
             
             col1, col2, col3, col4 = st.columns(4)
             
-            col1.metric("Precio Actual", f"${current_price:.2f}")
-            col2.metric("Rentabilidad por Dividendo", f"{current_yield:.2f}%")
+            col1.metric(
+                "💵 Precio Actual",
+                f"${current_price:.2f}",
+                help="Último precio de cierre"
+            )
+            col2.metric(
+                "📊 Rentabilidad",
+                f"{current_yield:.2f}%",
+                help="Rentabilidad por dividendo anual"
+            )
             col3.metric(
-                "Zona Infravalorada",
+                "🟢 Zona Infravalorada",
                 f"${undervalued_price:.2f}",
                 delta=f"{upside_to_undervalued:.1f}%",
-                delta_color="inverse"
+                delta_color="inverse",
+                help="Nivel de precio infravalorado (compra)"
             )
             col4.metric(
-                "Zona Sobrevalorada",
+                "🔴 Zona Sobrevalorada",
                 f"${overvalued_price:.2f}",
-                delta=f"{upside_to_overvalued:.1f}%"
+                delta=f"{upside_to_overvalued:.1f}%",
+                help="Nivel de precio sobrevalorado (venta)"
             )
+            
+            st.divider()
             
             # Pestañas
             tab1, tab2, tab3, tab4 = st.tabs([
@@ -598,26 +782,38 @@ def main():
                 if fig_div:
                     st.plotly_chart(fig_div, use_container_width=True)
                     
+                    st.divider()
+                    
                     st.subheader("📊 Estadísticas de Dividendos")
                     
                     col1, col2, col3, col4 = st.columns(4)
                     
                     total_divs = len(dividend_data)
                     avg_div = dividend_data['amount'].mean()
-                    latest_div = dividend_data.iloc[0]['amount']
+                    latest_div = dividend_data.iloc[0]['amount'] if len(dividend_data) > 0 else 0
                     total_paid = dividend_data['amount'].sum()
                     
-                    col1.metric("Pagos Totales", f"{total_divs:,}")
-                    col2.metric("Pago Promedio", f"${avg_div:.3f}")
-                    col3.metric("Último Pago", f"${latest_div:.3f}")
-                    col4.metric("Total Acumulado", f"${total_paid:.2f}")
+                    col1.metric("📋 Pagos Totales", f"{total_divs:,}")
+                    col2.metric("📊 Pago Promedio", f"${avg_div:.3f}")
+                    col3.metric("🎯 Último Pago", f"${latest_div:.3f}")
+                    col4.metric("💵 Total Acumulado", f"${total_paid:.2f}")
                     
-                    st.subheader("📅 Pagos Recientes")
+                    st.divider()
+                    
+                    st.subheader("📅 Pagos de Dividendos Recientes")
                     recent = dividend_data.head(12).copy()
                     recent['ex_dividend_date'] = recent['ex_dividend_date'].dt.strftime('%Y-%m-%d')
-                    recent.columns = ['Fecha Ex-Dividendo', 'Monto']
-                    recent['Monto'] = recent['Monto'].apply(lambda x: f"${x:.3f}")
-                    st.dataframe(recent, use_container_width=True, hide_index=True)
+                    recent.columns = ['📅 Fecha Ex-Dividendo', '💰 Monto']
+                    recent['💰 Monto'] = recent['💰 Monto'].apply(lambda x: f"${x:.3f}")
+                    st.dataframe(
+                        recent,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "📅 Fecha Ex-Dividendo": st.column_config.TextColumn(width="medium"),
+                            "💰 Monto": st.column_config.TextColumn(width="medium")
+                        }
+                    )
             
             with tab3:
                 fig_growth = plot_dividend_growth(annual_dividends, ticker.upper())
@@ -625,7 +821,9 @@ def main():
                     st.plotly_chart(fig_growth, use_container_width=True)
                     
                     if len(annual_dividends) > 1:
-                        st.subheader("📈 Análisis de Crecimiento")
+                        st.divider()
+                        
+                        st.subheader("📈 Métricas de Crecimiento")
                         
                         cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
                                 annual_dividends['annual_dividend'].iloc[0]) ** 
@@ -634,13 +832,29 @@ def main():
                         avg_growth = annual_dividends['annual_dividend'].pct_change().mean() * 100
                         years_data = len(annual_dividends)
                         latest_annual = annual_dividends['annual_dividend'].iloc[-1]
+                        first_annual = annual_dividends['annual_dividend'].iloc[0]
                         
                         col1, col2, col3, col4 = st.columns(4)
                         
-                        col1.metric("CAGR de Dividendos", f"{cagr:.2f}%")
-                        col2.metric("Crecimiento Anual Promedio", f"{avg_growth:.2f}%")
-                        col3.metric("Años Analizados", years_data)
-                        col4.metric("Último Dividendo Anual", f"${latest_annual:.2f}")
+                        col1.metric(
+                            "📊 CAGR",
+                            f"{cagr:.2f}%",
+                            help="Tasa de Crecimiento Anual Compuesta"
+                        )
+                        col2.metric(
+                            "📈 Crecimiento Promedio",
+                            f"{avg_growth:.2f}%",
+                            help="Crecimiento anual promedio"
+                        )
+                        col3.metric(
+                            "📅 Período Analizado",
+                            f"{years_data} años"
+                        )
+                        col4.metric(
+                            "💰 Último Dividendo Anual",
+                            f"${latest_annual:.2f}",
+                            delta=f"+${latest_annual - first_annual:.2f} desde inicio"
+                        )
             
             with tab4:
                 col1, col2 = st.columns(2)
@@ -721,33 +935,39 @@ def main():
     
     else:
         # Pantalla de bienvenida
-        st.info("""
-        ### 👋 Bienvenido al Analizador Geraldine Weiss
+        col1, col2, col3 = st.columns([1, 2, 1])
         
-        Esta herramienta profesional implementa la legendaria metodología de valoración por dividendos.
-        """)
-        
-        st.markdown("""
-        #### 🎯 Lo Que Ofrece Esta Herramienta
-        
-        - Análisis histórico de rentabilidad por dividendo
-        - Bandas dinámicas de valoración (sobrevalorada/infravalorada)
-        - Señales claras de compra/venta/mantener
-        - Seguimiento completo de pagos de dividendos
-        - Cálculos de tasa de crecimiento y CAGR
-        - Visualizaciones interactivas
-        
-        #### 🚀 Cómo Empezar
-        
-        1. Introduce un ticker en la barra lateral
-        2. Ajusta el período de análisis (3-10 años)
-        3. Haz clic en "Analizar Acción"
-        
-        **Tickers sugeridos:** KO, JNJ, PG, MMM, CAT, XOM, CVX, T
-        """)
-        
-        st.image("https://via.placeholder.com/1200x400/1a1f2e/00ff88?text=Introduce+un+ticker+para+comenzar", 
-                use_container_width=True)
+        with col2:
+            st.info("""
+            ### 👋 Bienvenido al Analizador Geraldine Weiss
+            
+            Esta herramienta profesional implementa la legendaria metodología de valoración por dividendos.
+            """)
+            
+            st.markdown("""
+            #### 🎯 Lo Que Ofrece Esta Herramienta
+            
+            - 📊 Análisis histórico de rentabilidad por dividendo
+            - 📈 Bandas dinámicas de valoración (sobrevalorada/infravalorada)
+            - 🎯 Señales claras de compra/venta/mantener
+            - 💰 Seguimiento completo de pagos de dividendos
+            - 📉 Cálculos de tasa de crecimiento y CAGR
+            - 🖼️ Visualizaciones interactivas
+            
+            #### 🚀 Cómo Empezar
+            
+            1. **Introduce un ticker** en la barra lateral (ej: KO, JNJ, PG)
+            2. **Ajusta el período** de análisis (3-10 años)
+            3. **Haz clic** en "Analizar Acción"
+            4. **Revisa** las bandas de valoración y señales
+            """)
+            
+            st.success("""
+            **💡 Tickers Recomendados para Probar:**
+            
+            KO (Coca-Cola) · JNJ (Johnson & Johnson) · PG (Procter & Gamble)  
+            MMM (3M) · CAT (Caterpillar) · XOM (ExxonMobil) · CVX (Chevron)
+            """)
     
     # Créditos del autor
     st.markdown("""
