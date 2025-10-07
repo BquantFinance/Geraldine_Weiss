@@ -9,6 +9,7 @@ from dateutil.relativedelta import relativedelta
 import requests
 from io import StringIO
 import warnings
+import pytz
 
 # Suprimir warnings de yfinance
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -102,15 +103,33 @@ class DividendDataFetcher:
         url = f"{self.base_url}/{ticker}/"
         
         try:
-            response = self.session.get(url, headers=self.headers, timeout=15)
+            # Headers mejorados para evitar bloqueos
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0'
+            }
+            
+            response = self.session.get(url, headers=headers, timeout=20, allow_redirects=True)
             response.raise_for_status()
+            
+            # Verificar si la respuesta es válida
+            if len(response.text) < 100:
+                return pd.DataFrame()
             
             tables = pd.read_html(StringIO(response.text))
             if not tables:
                 return pd.DataFrame()
             
             df = None
-            for table in tables:
+            for table_idx, table in enumerate(tables):
                 temp_df = table.copy()
                 temp_df.columns = [str(col).strip() for col in temp_df.columns]
                 
@@ -141,10 +160,12 @@ class DividendDataFetcher:
                 df['payout_date'] = pd.to_datetime(df['payout_date'], errors='coerce')
             
             if 'amount' in df.columns:
-                df['amount'] = df['amount'].astype(str).str.replace('$', '').str.replace(',', '').str.strip()
+                df['amount'] = df['amount'].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False).str.strip()
                 df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
             
             df = df[df['ex_dividend_date'].notna()]
+            df = df[df['amount'].notna()]
+            df = df[df['amount'] > 0]
             
             if start_date:
                 df = df[df['ex_dividend_date'] >= pd.to_datetime(start_date)]
@@ -158,6 +179,14 @@ class DividendDataFetcher:
             
             return df
             
+        except requests.exceptions.Timeout:
+            return pd.DataFrame()
+        except requests.exceptions.ConnectionError:
+            return pd.DataFrame()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                return pd.DataFrame()
+            return pd.DataFrame()
         except Exception:
             return pd.DataFrame()
 
@@ -169,14 +198,6 @@ class GeraldineWeissAnalyzer:
         self.ticker = ticker
         self.years = years
         self.dividend_fetcher = DividendDataFetcher()
-        
-    def is_european_ticker(self, ticker: str) -> bool:
-        """Detecta si un ticker es europeo basándose en sufijos comunes"""
-        european_suffixes = [
-            '.MC', '.PA', '.DE', '.L', '.AS', '.MI', '.BR', '.HE', 
-            '.OL', '.ST', '.CO', '.LS', '.AT', '.PR', '.VI', '.IR', '.WA',
-        ]
-        return any(ticker.upper().endswith(suffix) for suffix in european_suffixes)
         
     def fetch_price_data(self):
         """Obtiene datos históricos de precios"""
@@ -204,39 +225,79 @@ class GeraldineWeissAnalyzer:
             return None
     
     def fetch_dividend_data(self):
-        """Obtiene datos de dividendos con lógica inteligente de fuentes"""
+        """Obtiene datos de dividendos con lógica clara de fuentes"""
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
-        is_european = self.is_european_ticker(self.ticker)
+        # Detectar si tiene sufijo (europeo/internacional) o no (USA)
+        has_suffix = '.' in self.ticker
         
-        if not is_european:
-            df = self.dividend_fetcher.fetch_dividends(
-                self.ticker, 
-                start_date.strftime('%Y-%m-%d'),
-                end_date.strftime('%Y-%m-%d')
-            )
-            
-            if not df.empty:
-                return df
-        
+        if not has_suffix:
+            # SIN SUFIJO = USA → usar dividendhistory.org
+            st.info(f"🇺🇸 Ticker USA detectado ({self.ticker}). Usando dividendhistory.org...")
+            try:
+                df = self.dividend_fetcher.fetch_dividends(
+                    self.ticker, 
+                    start_date.strftime('%Y-%m-%d'),
+                    end_date.strftime('%Y-%m-%d')
+                )
+                
+                if not df.empty:
+                    st.success(f"✅ Encontrados {len(df)} pagos de dividendos desde dividendhistory.org")
+                    return df
+                else:
+                    st.warning(f"⚠️ dividendhistory.org no retornó datos. Intentando con yfinance como fallback...")
+                    # Fallback a yfinance si dividendhistory falla
+                    return self._fetch_from_yfinance(start_date)
+            except Exception as e:
+                st.warning(f"⚠️ Error con dividendhistory.org: {str(e)[:80]}")
+                st.info(f"🔄 Intentando con yfinance como fallback...")
+                return self._fetch_from_yfinance(start_date)
+        else:
+            # CON SUFIJO = Europa/Internacional → usar yfinance
+            st.info(f"🌍 Ticker internacional detectado ({self.ticker}). Usando yfinance...")
+            return self._fetch_from_yfinance(start_date)
+    
+    def _fetch_from_yfinance(self, start_date):
+        """Helper para obtener dividendos desde yfinance con manejo correcto de timezone"""
         try:
             ticker_obj = yf.Ticker(self.ticker)
             divs = ticker_obj.dividends
             
             if not divs.empty:
-                df = pd.DataFrame({
-                    'ex_dividend_date': divs.index,
-                    'amount': divs.values
-                })
-                df = df[df['ex_dividend_date'] >= start_date]
+                # Convertir start_date a timezone-aware si divs tiene timezone
+                if divs.index.tz is not None:
+                    # divs tiene timezone, hacer start_date timezone-aware
+                    if start_date.tzinfo is None:
+                        start_date = pytz.UTC.localize(start_date)
+                    start_date = start_date.astimezone(divs.index.tz)
+                else:
+                    # divs no tiene timezone, hacer start_date naive
+                    if start_date.tzinfo is not None:
+                        start_date = start_date.replace(tzinfo=None)
                 
-                if not df.empty:
+                # Filtrar por rango de fechas
+                divs = divs[divs.index >= start_date]
+                
+                if not divs.empty:
+                    df = pd.DataFrame({
+                        'ex_dividend_date': divs.index.tz_localize(None) if divs.index.tz is not None else divs.index,
+                        'amount': divs.values
+                    })
+                    df = df.sort_values('ex_dividend_date', ascending=False).reset_index(drop=True)
+                    st.success(f"✅ Encontrados {len(df)} pagos de dividendos desde yfinance")
                     return df
-        except:
-            pass
-        
-        return pd.DataFrame()
+                else:
+                    st.error(f"❌ No hay dividendos en el período de {self.years} años")
+                    return pd.DataFrame()
+            else:
+                st.error(f"❌ yfinance no retornó dividendos para {self.ticker}")
+                return pd.DataFrame()
+        except Exception as e:
+            st.error(f"❌ Error con yfinance: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc(), language='python')
+            return pd.DataFrame()
     
     def calculate_annual_dividends(self, dividend_df):
         """Calcula dividendos anuales por año"""
@@ -324,21 +385,31 @@ def analyze_ticker_quick(ticker, years=6):
     try:
         analyzer = GeraldineWeissAnalyzer(ticker, years)
         
+        # Paso 1: Obtener datos de precio
         price_data = analyzer.fetch_price_data()
         if price_data is None or price_data.empty:
+            st.warning(f"Debug {ticker}: No se pudieron obtener datos de precio")
             return None
         
+        # Paso 2: Obtener datos de dividendos
         dividend_data = analyzer.fetch_dividend_data()
         if dividend_data.empty:
+            st.warning(f"Debug {ticker}: No se encontraron datos de dividendos")
             return None
         
+        # Paso 3: Calcular dividendos anuales
         annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
         if annual_dividends.empty:
+            st.warning(f"Debug {ticker}: No se pudieron calcular dividendos anuales")
             return None
         
+        # Paso 4: Calcular bandas de valoración
         analysis_df = analyzer.calculate_valuation_bands(price_data, annual_dividends)
         
         if analysis_df is None or analysis_df.empty:
+            st.warning(f"Debug {ticker}: No se pudieron calcular bandas de valoración")
+            st.write(f"Años de precios: {price_data['year'].nunique() if 'year' in price_data.columns else 'N/A'}")
+            st.write(f"Años de dividendos: {len(annual_dividends)}")
             return None
         
         signal, description, score = analyzer.get_current_signal(analysis_df)
@@ -347,9 +418,12 @@ def analyze_ticker_quick(ticker, years=6):
         # Calcular CAGR
         cagr = 0
         if len(annual_dividends) > 1:
-            cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
-                    annual_dividends['annual_dividend'].iloc[0]) ** 
-                   (1 / (len(annual_dividends) - 1)) - 1) * 100
+            try:
+                cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
+                        annual_dividends['annual_dividend'].iloc[0]) ** 
+                       (1 / (len(annual_dividends) - 1)) - 1) * 100
+            except:
+                cagr = 0
         
         return {
             'ticker': ticker,
@@ -364,8 +438,135 @@ def analyze_ticker_quick(ticker, years=6):
             'analysis_df': analysis_df,
             'dividend_data': dividend_data
         }
-    except Exception:
+    except Exception as e:
+        st.error(f"Debug {ticker}: Error en análisis - {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
         return None
+
+
+def plot_geraldine_weiss_individual(analysis_df, ticker):
+    """Crea gráfico de Geraldine Weiss para análisis individual"""
+    fig = go.Figure()
+    
+    # Área de relleno entre bandas
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['overvalued'],
+        name='Zona Sobrevalorada',
+        line=dict(color='rgba(255, 107, 107, 0)', width=0),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['undervalued'],
+        name='Rango de Valor Razonable',
+        fill='tonexty',
+        fillcolor='rgba(0, 255, 136, 0.1)',
+        line=dict(color='rgba(0, 255, 136, 0)', width=0),
+        showlegend=True,
+        hoverinfo='skip'
+    ))
+    
+    # Línea de sobrevaloración
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['overvalued'],
+        name='Sobrevalorada',
+        line=dict(color='#ff6b6b', width=3),
+        mode='lines',
+        hovertemplate='<b>Sobrevalorada:</b> $%{y:.2f}<extra></extra>'
+    ))
+    
+    # Línea de infravaloración
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['undervalued'],
+        name='Infravalorada',
+        line=dict(color='#00ff88', width=3),
+        mode='lines',
+        hovertemplate='<b>Infravalorada:</b> $%{y:.2f}<extra></extra>'
+    ))
+    
+    # Precio actual
+    fig.add_trace(go.Scatter(
+        x=analysis_df.index,
+        y=analysis_df['Close'],
+        name='Precio Actual',
+        line=dict(color='#00d4ff', width=4),
+        mode='lines',
+        hovertemplate='<b>Precio:</b> $%{y:.2f}<extra></extra>'
+    ))
+    
+    # Marcador precio actual
+    latest = analysis_df.iloc[-1]
+    fig.add_trace(go.Scatter(
+        x=[analysis_df.index[-1]],
+        y=[latest['Close']],
+        mode='markers',
+        marker=dict(size=16, color='#00d4ff', line=dict(color='white', width=3)),
+        showlegend=False,
+        hovertemplate=f'<b>Actual: ${latest["Close"]:.2f}</b><extra></extra>'
+    ))
+    
+    # Anotación precio actual
+    fig.add_annotation(
+        x=analysis_df.index[-1],
+        y=latest['Close'],
+        text=f"${latest['Close']:.2f}",
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=1,
+        arrowwidth=2,
+        arrowcolor="#00d4ff",
+        ax=40,
+        ay=-40,
+        bgcolor="rgba(0, 212, 255, 0.2)",
+        bordercolor="#00d4ff",
+        borderwidth=2,
+        font=dict(size=14, color="white")
+    )
+    
+    fig.update_layout(
+        title=dict(
+            text=f'<b>{ticker}</b> - Modelo de Valoración Geraldine Weiss',
+            font=dict(size=24, color='white'),
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis=dict(
+            title='',
+            gridcolor='rgba(255, 255, 255, 0.1)',
+            showgrid=True,
+            zeroline=False
+        ),
+        yaxis=dict(
+            title='Precio (USD)',
+            gridcolor='rgba(255, 255, 255, 0.1)',
+            showgrid=True,
+            zeroline=False,
+            tickprefix='$'
+        ),
+        template='plotly_dark',
+        hovermode='x unified',
+        height=550,
+        plot_bgcolor='#0e1117',
+        paper_bgcolor='#0e1117',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor='rgba(30, 40, 57, 0.8)',
+            bordercolor='rgba(255, 255, 255, 0.2)',
+            borderwidth=1
+        )
+    )
+    
+    return fig
 
 
 def plot_comparison_chart(results):
@@ -594,7 +795,43 @@ def main():
                         col4.metric("🔴 Zona Sobrevalorada", f"${result['overvalued']:.2f}",
                                    delta=f"{upside_overvalued:.1f}%")
                         
-                        st.info("💡 **Nota:** Este es el análisis simplificado. Para visualizaciones completas, usa las pestañas de Comparación o Cartera.")
+                        st.divider()
+                        
+                        # Gráfico de Geraldine Weiss
+                        st.subheader("📈 Análisis de Valoración")
+                        st.plotly_chart(
+                            plot_geraldine_weiss_individual(result['analysis_df'], ticker.upper()),
+                            use_container_width=True
+                        )
+                        
+                        st.divider()
+                        
+                        # Interpretación
+                        st.subheader("🎯 Interpretación")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.info("""
+                            **🟢 Zona Infravalorada (Verde)**
+                            
+                            Cuando el precio se aproxima a la línea verde, la acción ofrece alta rentabilidad por dividendo.
+                            
+                            - **Acción:** Considerar comprar
+                            - **Riesgo:** Menor relativo al histórico
+                            - **Retorno:** Apreciación + dividendos
+                            """)
+                        
+                        with col2:
+                            st.warning("""
+                            **🔴 Zona Sobrevalorada (Roja)**
+                            
+                            Cuando el precio se aproxima a la línea roja, la acción ofrece baja rentabilidad por dividendo.
+                            
+                            - **Acción:** Considerar vender
+                            - **Riesgo:** Mayor relativo al histórico
+                            - **Retorno:** Potencial alcista limitado
+                            """)
             else:
                 st.info("""
                 ### 👋 Bienvenido al Analizador Geraldine Weiss
