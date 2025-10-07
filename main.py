@@ -196,6 +196,68 @@ class DividendDataFetcher:
             return pd.DataFrame()
 
 
+def get_real_current_price(ticker: str):
+    """Obtiene el precio real actual usando múltiples métodos"""
+    prices = []
+    
+    try:
+        ticker_obj = yf.Ticker(ticker)
+        
+        # Método 1: history(period='1d') - A menudo el más actualizado
+        try:
+            hist_1d = ticker_obj.history(period='1d')
+            if not hist_1d.empty and 'Close' in hist_1d.columns:
+                price = hist_1d['Close'].iloc[-1]
+                if price > 0:
+                    prices.append(price)
+        except:
+            pass
+        
+        # Método 2: history(period='5d') con último valor
+        try:
+            hist_5d = ticker_obj.history(period='5d')
+            if not hist_5d.empty and 'Close' in hist_5d.columns:
+                price = hist_5d['Close'].iloc[-1]
+                if price > 0:
+                    prices.append(price)
+        except:
+            pass
+        
+        # Método 3: ticker.info
+        try:
+            info = ticker_obj.info
+            price = (
+                info.get('currentPrice') or 
+                info.get('regularMarketPrice') or
+                info.get('regularMarketPreviousClose') or
+                info.get('previousClose')
+            )
+            if price and price > 0:
+                prices.append(price)
+        except:
+            pass
+        
+        # Método 4: fast_info (si está disponible)
+        try:
+            if hasattr(ticker_obj, 'fast_info'):
+                price = ticker_obj.fast_info.get('lastPrice')
+                if price and price > 0:
+                    prices.append(price)
+        except:
+            pass
+        
+    except:
+        pass
+    
+    # Si tenemos precios, usar la mediana (más robusto que promedio)
+    if len(prices) >= 2:
+        return np.median(prices)
+    elif len(prices) == 1:
+        return prices[0]
+    else:
+        return None
+
+
 class GeraldineWeissAnalyzer:
     """Implementa el método de valoración por dividendos de Geraldine Weiss"""
     
@@ -206,12 +268,12 @@ class GeraldineWeissAnalyzer:
         self.data_source = None
         
     def fetch_price_data(self):
-        """Obtiene datos históricos de precios con corrección automática"""
+        """Obtiene datos históricos de precios con corrección automática agresiva"""
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
         try:
-            # Intento 1: Datos sin auto_adjust
+            # Obtener datos históricos SIN auto_adjust
             data = yf.download(
                 self.ticker, 
                 start=start_date, 
@@ -221,7 +283,7 @@ class GeraldineWeissAnalyzer:
             )
             
             if data.empty:
-                # Intento 2: Con auto_adjust si falla el primero
+                # Fallback: intentar con auto_adjust=True
                 data = yf.download(
                     self.ticker, 
                     start=start_date, 
@@ -238,41 +300,30 @@ class GeraldineWeissAnalyzer:
             
             data.index = pd.to_datetime(data.index)
             
-            # Validación automática del precio actual
+            # CORRECCIÓN AGRESIVA DEL PRECIO
             if 'Close' in data.columns and len(data) > 0:
                 historical_latest = data['Close'].iloc[-1]
                 
-                try:
-                    ticker_obj = yf.Ticker(self.ticker)
-                    info = ticker_obj.info
-                    
-                    # Buscar precio actual en múltiples campos
-                    real_price = (
-                        info.get('currentPrice') or 
-                        info.get('regularMarketPrice') or
-                        info.get('regularMarketPreviousClose') or
-                        info.get('previousClose')
-                    )
-                    
-                    # Si encontramos precio real y hay discrepancia
-                    if real_price and real_price > 0 and historical_latest > 0:
-                        discrepancy = abs(historical_latest - real_price) / real_price
-                        
-                        if discrepancy > 0.05:  # Más del 5% de diferencia
-                            adjustment_factor = real_price / historical_latest
-                            
-                            data['Close'] = data['Close'] * adjustment_factor
-                            if 'Open' in data.columns:
-                                data['Open'] = data['Open'] * adjustment_factor
-                            if 'High' in data.columns:
-                                data['High'] = data['High'] * adjustment_factor
-                            if 'Low' in data.columns:
-                                data['Low'] = data['Low'] * adjustment_factor
-                            if 'Adj Close' in data.columns:
-                                data['Adj Close'] = data['Adj Close'] * adjustment_factor
+                # Obtener precio real usando múltiples métodos
+                real_price = get_real_current_price(self.ticker)
                 
-                except:
-                    pass
+                if real_price and real_price > 0 and historical_latest > 0:
+                    discrepancy = abs(historical_latest - real_price) / real_price
+                    
+                    # Si hay más del 3% de discrepancia, ajustar
+                    if discrepancy > 0.03:
+                        adjustment_factor = real_price / historical_latest
+                        
+                        # Ajustar toda la serie temporal
+                        data['Close'] = data['Close'] * adjustment_factor
+                        if 'Open' in data.columns:
+                            data['Open'] = data['Open'] * adjustment_factor
+                        if 'High' in data.columns:
+                            data['High'] = data['High'] * adjustment_factor
+                        if 'Low' in data.columns:
+                            data['Low'] = data['Low'] * adjustment_factor
+                        if 'Adj Close' in data.columns:
+                            data['Adj Close'] = data['Adj Close'] * adjustment_factor
             
             return data
             
