@@ -205,30 +205,73 @@ class GeraldineWeissAnalyzer:
         self.dividend_fetcher = DividendDataFetcher()
         self.data_source = None
         
-    def fetch_price_data(self):
-        """Obtiene datos históricos de precios"""
-        end_date = datetime.now()
-        start_date = end_date - relativedelta(years=self.years)
+    
+def fetch_price_data(self):
+    """Obtiene datos históricos de precios con corrección automática"""
+    end_date = datetime.now()
+    start_date = end_date - relativedelta(years=self.years)
+    
+    try:
+        # Obtener datos históricos SIN ajustes automáticos
+        data = yf.download(
+            self.ticker, 
+            start=start_date, 
+            end=end_date, 
+            progress=False,
+            auto_adjust=False
+        )
         
-        try:
-            data = yf.download(
-                self.ticker, 
-                start=start_date, 
-                end=end_date, 
-                progress=False,
-                auto_adjust=True
-            )
-            
-            if data.empty:
-                return None
-            
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = data.columns.get_level_values(0)
-            
-            data.index = pd.to_datetime(data.index)
-            return data
-        except Exception:
+        if data.empty:
             return None
+        
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+        
+        data.index = pd.to_datetime(data.index)
+        
+        # Validación automática del precio actual
+        if 'Close' in data.columns and len(data) > 0:
+            historical_latest = data['Close'].iloc[-1]
+            
+            # Obtener precio actual real
+            try:
+                ticker_obj = yf.Ticker(self.ticker)
+                info = ticker_obj.info
+                
+                # Buscar precio actual en múltiples campos
+                real_price = (
+                    info.get('currentPrice') or 
+                    info.get('regularMarketPrice') or
+                    info.get('regularMarketPreviousClose') or
+                    info.get('previousClose')
+                )
+                
+                # Si encontramos precio real y hay discrepancia significativa
+                if real_price and real_price > 0:
+                    discrepancy = abs(historical_latest - real_price) / real_price
+                    
+                    if discrepancy > 0.05:  # Más del 5% de diferencia
+                        # Ajustar toda la serie temporal proporcionalmente
+                        adjustment_factor = real_price / historical_latest
+                        
+                        data['Close'] = data['Close'] * adjustment_factor
+                        if 'Open' in data.columns:
+                            data['Open'] = data['Open'] * adjustment_factor
+                        if 'High' in data.columns:
+                            data['High'] = data['High'] * adjustment_factor
+                        if 'Low' in data.columns:
+                            data['Low'] = data['Low'] * adjustment_factor
+                        if 'Adj Close' in data.columns:
+                            data['Adj Close'] = data['Adj Close'] * adjustment_factor
+            
+            except:
+                # Si falla la validación, usar datos originales
+                pass
+        
+        return data
+        
+    except Exception:
+        return None
     
     def fetch_dividend_data(self):
         """Obtiene datos de dividendos con lógica clara de fuentes"""
