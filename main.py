@@ -417,6 +417,60 @@ def analyze_ticker_quick(ticker, years=6):
         return None
 
 
+def create_weighted_portfolio_analysis(portfolio_results):
+    """Crea un análisis ponderado de cartera combinando todas las posiciones"""
+    
+    # Obtener todas las fechas únicas de todos los análisis
+    all_dates = set()
+    for r in portfolio_results:
+        all_dates.update(r['analysis_df'].index)
+    
+    all_dates = sorted(list(all_dates))
+    
+    # Crear DataFrame con fechas comunes
+    portfolio_df = pd.DataFrame(index=all_dates)
+    portfolio_df['weighted_price'] = 0.0
+    portfolio_df['weighted_undervalued'] = 0.0
+    portfolio_df['weighted_overvalued'] = 0.0
+    
+    # Calcular valores ponderados para cada fecha
+    for date in all_dates:
+        total_weight_at_date = 0
+        weighted_price = 0
+        weighted_undervalued = 0
+        weighted_overvalued = 0
+        
+        for r in portfolio_results:
+            # Buscar la fecha más cercana en el análisis de esta acción
+            if date in r['analysis_df'].index:
+                row = r['analysis_df'].loc[date]
+            else:
+                # Si la fecha exacta no existe, usar la más cercana anterior
+                available_dates = r['analysis_df'].index[r['analysis_df'].index <= date]
+                if len(available_dates) > 0:
+                    closest_date = available_dates[-1]
+                    row = r['analysis_df'].loc[closest_date]
+                else:
+                    continue
+            
+            weight = r['portfolio_weight'] / 100
+            total_weight_at_date += weight
+            
+            weighted_price += row['Close'] * weight
+            weighted_undervalued += row['undervalued'] * weight
+            weighted_overvalued += row['overvalued'] * weight
+        
+        if total_weight_at_date > 0:
+            portfolio_df.loc[date, 'weighted_price'] = weighted_price / total_weight_at_date
+            portfolio_df.loc[date, 'weighted_undervalued'] = weighted_undervalued / total_weight_at_date
+            portfolio_df.loc[date, 'weighted_overvalued'] = weighted_overvalued / total_weight_at_date
+    
+    # Eliminar filas con valores cero
+    portfolio_df = portfolio_df[(portfolio_df != 0).all(axis=1)]
+    
+    return portfolio_df
+
+
 def get_data_source_badge(source):
     """Genera un badge HTML para la fuente de datos"""
     if source == "dividendhistory.org":
@@ -545,38 +599,94 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
     return fig
 
 
-def plot_geraldine_weiss_compact(analysis_df, ticker):
-    """Crea gráfico compacto de Geraldine Weiss para cartera"""
+def plot_portfolio_geraldine_weiss(portfolio_df):
+    """Crea gráfico de Geraldine Weiss para cartera ponderada"""
     fig = go.Figure()
     
+    # Área de relleno entre bandas
     fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['overvalued'],
+        x=portfolio_df.index,
+        y=portfolio_df['weighted_overvalued'],
+        name='Zona Sobrevalorada',
+        line=dict(color='rgba(255, 107, 107, 0)', width=0),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=portfolio_df.index,
+        y=portfolio_df['weighted_undervalued'],
+        name='Rango de Valor Razonable',
+        fill='tonexty',
+        fillcolor='rgba(0, 255, 136, 0.1)',
+        line=dict(color='rgba(0, 255, 136, 0)', width=0),
+        showlegend=True,
+        hoverinfo='skip'
+    ))
+    
+    # Línea de sobrevaloración
+    fig.add_trace(go.Scatter(
+        x=portfolio_df.index,
+        y=portfolio_df['weighted_overvalued'],
         name='Sobrevalorada',
-        line=dict(color='#ff6b6b', width=2),
-        mode='lines'
+        line=dict(color='#ff6b6b', width=3),
+        mode='lines',
+        hovertemplate='<b>Sobrevalorada:</b> $%{y:.2f}<extra></extra>'
     ))
     
+    # Línea de infravaloración
     fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['undervalued'],
+        x=portfolio_df.index,
+        y=portfolio_df['weighted_undervalued'],
         name='Infravalorada',
-        line=dict(color='#00ff88', width=2),
-        mode='lines'
+        line=dict(color='#00ff88', width=3),
+        mode='lines',
+        hovertemplate='<b>Infravalorada:</b> $%{y:.2f}<extra></extra>'
     ))
     
+    # Precio ponderado
     fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['Close'],
-        name='Precio',
-        line=dict(color='#00d4ff', width=3),
-        mode='lines'
+        x=portfolio_df.index,
+        y=portfolio_df['weighted_price'],
+        name='Precio Ponderado',
+        line=dict(color='#00d4ff', width=4),
+        mode='lines',
+        hovertemplate='<b>Precio:</b> $%{y:.2f}<extra></extra>'
     ))
+    
+    # Marcador precio actual
+    latest = portfolio_df.iloc[-1]
+    fig.add_trace(go.Scatter(
+        x=[portfolio_df.index[-1]],
+        y=[latest['weighted_price']],
+        mode='markers',
+        marker=dict(size=16, color='#00d4ff', line=dict(color='white', width=3)),
+        showlegend=False,
+        hovertemplate=f'<b>Actual: ${latest["weighted_price"]:.2f}</b><extra></extra>'
+    ))
+    
+    # Anotación precio actual
+    fig.add_annotation(
+        x=portfolio_df.index[-1],
+        y=latest['weighted_price'],
+        text=f"${latest['weighted_price']:.2f}",
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=1,
+        arrowwidth=2,
+        arrowcolor="#00d4ff",
+        ax=40,
+        ay=-40,
+        bgcolor="rgba(0, 212, 255, 0.2)",
+        bordercolor="#00d4ff",
+        borderwidth=2,
+        font=dict(size=14, color="white")
+    )
     
     fig.update_layout(
         title=dict(
-            text=f'<b>{ticker}</b>',
-            font=dict(size=16, color='white'),
+            text='<b>Cartera Ponderada</b> - Análisis Geraldine Weiss',
+            font=dict(size=24, color='white'),
             x=0.5,
             xanchor='center'
         ),
@@ -587,7 +697,7 @@ def plot_geraldine_weiss_compact(analysis_df, ticker):
             zeroline=False
         ),
         yaxis=dict(
-            title='',
+            title='Valor Ponderado (USD)',
             gridcolor='rgba(255, 255, 255, 0.1)',
             showgrid=True,
             zeroline=False,
@@ -595,11 +705,19 @@ def plot_geraldine_weiss_compact(analysis_df, ticker):
         ),
         template='plotly_dark',
         hovermode='x unified',
-        height=300,
+        height=550,
         plot_bgcolor='#0e1117',
         paper_bgcolor='#0e1117',
-        showlegend=False,
-        margin=dict(l=50, r=20, t=40, b=30)
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor='rgba(30, 40, 57, 0.8)',
+            bordercolor='rgba(255, 255, 255, 0.2)',
+            borderwidth=1
+        )
     )
     
     return fig
@@ -1131,29 +1249,15 @@ def main():
                         
                         st.divider()
                         
-                        # NEW: Individual Geraldine Weiss charts for each position
-                        st.subheader("📈 Análisis Geraldine Weiss por Posición")
+                        # NEW: Weighted Portfolio Geraldine Weiss Chart
+                        st.subheader("📈 Análisis Geraldine Weiss de Cartera Ponderada")
+                        st.caption("Este gráfico muestra la valoración agregada de toda la cartera, ponderando cada posición según su peso")
                         
-                        # Display charts in a 2-column layout
-                        for i in range(0, len(portfolio_results), 2):
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                r = portfolio_results[i]
-                                st.plotly_chart(
-                                    plot_geraldine_weiss_compact(r['analysis_df'], r['ticker']),
-                                    use_container_width=True
-                                )
-                                st.caption(f"**{r['ticker']}** ({r['portfolio_weight']:.1f}%) - {r['signal']}")
-                            
-                            if i + 1 < len(portfolio_results):
-                                with col2:
-                                    r = portfolio_results[i + 1]
-                                    st.plotly_chart(
-                                        plot_geraldine_weiss_compact(r['analysis_df'], r['ticker']),
-                                        use_container_width=True
-                                    )
-                                    st.caption(f"**{r['ticker']}** ({r['portfolio_weight']:.1f}%) - {r['signal']}")
+                        portfolio_df = create_weighted_portfolio_analysis(portfolio_results)
+                        st.plotly_chart(
+                            plot_portfolio_geraldine_weiss(portfolio_df),
+                            use_container_width=True
+                        )
                         
                         st.divider()
                         
