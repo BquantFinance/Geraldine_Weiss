@@ -17,396 +17,62 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Tema oscuro premium con CSS
+# CSS minimalista para tema oscuro
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    * {
-        font-family: 'Inter', sans-serif;
-    }
-    
     .main {
-        background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f1419 100%);
-        background-attachment: fixed;
+        background-color: #0e1117;
     }
     
-    .stApp {
-        background: transparent;
+    [data-testid="stSidebar"] {
+        background-color: #1a1f2e;
     }
     
-    /* Tarjetas de cristal (glass morphism) */
-    .glass-card {
-        background: rgba(255, 255, 255, 0.03);
-        backdrop-filter: blur(20px);
-        border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        padding: 30px;
-        margin: 20px 0;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        transition: all 0.3s ease;
-    }
-    
-    .glass-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 40px 0 rgba(0, 255, 136, 0.15);
-        border: 1px solid rgba(0, 255, 136, 0.2);
-    }
-    
-    /* Tarjetas de métricas premium */
-    .metric-container {
-        background: linear-gradient(135deg, rgba(10, 14, 39, 0.9) 0%, rgba(26, 31, 58, 0.9) 100%);
-        backdrop-filter: blur(10px);
-        border-radius: 16px;
-        padding: 24px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        position: relative;
-        overflow: hidden;
-        transition: all 0.3s ease;
-    }
-    
-    .metric-container::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        background: linear-gradient(90deg, #00ff88, #00d4ff, #7b2ff7);
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }
-    
-    .metric-container:hover::before {
-        opacity: 1;
-    }
-    
-    .metric-container:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 12px 48px rgba(0, 255, 136, 0.25);
-        border: 1px solid rgba(0, 255, 136, 0.3);
-    }
-    
-    /* Banner de señal */
-    .signal-banner {
-        background: linear-gradient(135deg, rgba(10, 14, 39, 0.95) 0%, rgba(26, 31, 58, 0.95) 100%);
-        backdrop-filter: blur(20px);
-        border-radius: 24px;
-        padding: 48px;
-        text-align: center;
-        border: 2px solid;
-        margin: 30px 0;
-        position: relative;
-        overflow: hidden;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-    }
-    
-    .signal-banner::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        left: -50%;
-        width: 200%;
-        height: 200%;
-        background: radial-gradient(circle, rgba(0, 255, 136, 0.1) 0%, transparent 70%);
-        animation: pulse 3s ease-in-out infinite;
-    }
-    
-    @keyframes pulse {
-        0%, 100% { transform: scale(1); opacity: 0.5; }
-        50% { transform: scale(1.1); opacity: 0.8; }
-    }
-    
-    .signal-title {
-        font-size: 48px;
-        font-weight: 700;
-        margin: 0;
-        letter-spacing: 2px;
-        text-shadow: 0 0 30px currentColor;
-        position: relative;
-        z-index: 1;
-    }
-    
-    .signal-description {
-        font-size: 20px;
-        margin: 16px 0 0 0;
-        font-weight: 400;
-        opacity: 0.9;
-        position: relative;
-        z-index: 1;
-    }
-    
-    /* Valores de métricas */
     div[data-testid="stMetricValue"] {
-        font-size: 36px;
-        font-weight: 700;
-        background: linear-gradient(135deg, #00ff88 0%, #00d4ff 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        font-size: 32px;
+        color: #00ff88;
     }
     
-    div[data-testid="stMetricLabel"] {
-        font-size: 14px;
-        text-transform: uppercase;
-        letter-spacing: 1.5px;
-        color: rgba(255, 255, 255, 0.6);
-        font-weight: 600;
-    }
-    
-    div[data-testid="stMetricDelta"] {
-        font-size: 16px;
-        font-weight: 600;
-    }
-    
-    /* Encabezados */
-    h1 {
-        font-size: 56px !important;
-        font-weight: 700 !important;
-        background: linear-gradient(135deg, #ffffff 0%, #00ff88 50%, #00d4ff 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        margin-bottom: 8px !important;
-        letter-spacing: -1px;
-    }
-    
-    h2 {
-        font-size: 32px !important;
-        font-weight: 600 !important;
-        color: #ffffff !important;
-        margin-top: 40px !important;
-        margin-bottom: 20px !important;
-    }
-    
-    h3 {
-        font-size: 24px !important;
-        font-weight: 600 !important;
-        color: rgba(255, 255, 255, 0.95) !important;
-        margin-top: 32px !important;
-        margin-bottom: 16px !important;
-    }
-    
-    /* Subtítulo */
-    .subtitle {
-        font-size: 20px;
-        color: rgba(255, 255, 255, 0.7);
-        font-weight: 400;
-        margin-top: -10px;
-        margin-bottom: 40px;
-    }
-    
-    /* Pestañas */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 12px;
-        background: rgba(255, 255, 255, 0.02);
-        padding: 8px;
-        border-radius: 16px;
-        backdrop-filter: blur(10px);
+        gap: 8px;
     }
     
     .stTabs [data-baseweb="tab"] {
-        background: transparent;
-        border-radius: 12px;
-        padding: 16px 32px;
-        font-weight: 600;
-        font-size: 15px;
-        color: rgba(255, 255, 255, 0.6);
-        border: 1px solid transparent;
-        transition: all 0.3s ease;
-    }
-    
-    .stTabs [data-baseweb="tab"]:hover {
-        background: rgba(255, 255, 255, 0.05);
-        color: rgba(255, 255, 255, 0.9);
+        background-color: #1e2839;
+        padding: 12px 24px;
+        border-radius: 8px;
     }
     
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, rgba(0, 255, 136, 0.15) 0%, rgba(0, 212, 255, 0.15) 100%) !important;
-        border: 1px solid rgba(0, 255, 136, 0.3) !important;
-        color: #00ff88 !important;
+        background-color: #2d3748;
+        border-bottom: 2px solid #00ff88;
     }
     
-    /* Barra lateral */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, rgba(10, 14, 39, 0.95) 0%, rgba(26, 31, 58, 0.95) 100%);
-        backdrop-filter: blur(20px);
-        border-right: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
-        color: #ffffff !important;
-    }
-    
-    /* Campos de entrada */
-    .stTextInput > div > div > input {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        color: #ffffff;
-        font-size: 16px;
-        padding: 12px 16px;
-        transition: all 0.3s ease;
-    }
-    
-    .stTextInput > div > div > input:focus {
-        border: 1px solid rgba(0, 255, 136, 0.5);
-        box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
-        background: rgba(255, 255, 255, 0.08);
-    }
-    
-    /* Botones */
-    .stButton > button {
-        background: linear-gradient(135deg, #00ff88 0%, #00d4ff 100%);
-        color: #0a0e27;
-        border: none;
-        border-radius: 12px;
-        padding: 16px 32px;
-        font-weight: 700;
-        font-size: 16px;
-        letter-spacing: 0.5px;
-        transition: all 0.3s ease;
-        box-shadow: 0 8px 24px rgba(0, 255, 136, 0.3);
-        text-transform: uppercase;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 32px rgba(0, 255, 136, 0.5);
-        background: linear-gradient(135deg, #00ff88 0%, #00d4ff 100%);
-    }
-    
-    /* Deslizador */
-    .stSlider > div > div > div {
-        background: rgba(0, 255, 136, 0.2);
-    }
-    
-    .stSlider > div > div > div > div {
-        background: linear-gradient(135deg, #00ff88 0%, #00d4ff 100%);
-        box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
-    }
-    
-    /* Cajas de información */
-    .info-box {
-        background: linear-gradient(135deg, rgba(0, 212, 255, 0.08) 0%, rgba(123, 47, 247, 0.08) 100%);
-        border-left: 4px solid #00d4ff;
-        border-radius: 12px;
-        padding: 24px;
-        margin: 20px 0;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(0, 212, 255, 0.2);
-    }
-    
-    .success-box {
-        background: linear-gradient(135deg, rgba(0, 255, 136, 0.08) 0%, rgba(0, 212, 255, 0.08) 100%);
-        border-left: 4px solid #00ff88;
-        border-radius: 12px;
-        padding: 24px;
-        margin: 20px 0;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(0, 255, 136, 0.2);
-    }
-    
-    .warning-box {
-        background: linear-gradient(135deg, rgba(255, 217, 61, 0.08) 0%, rgba(255, 107, 107, 0.08) 100%);
-        border-left: 4px solid #ffd93d;
-        border-radius: 12px;
-        padding: 24px;
-        margin: 20px 0;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 217, 61, 0.2);
-    }
-    
-    /* Pantalla de bienvenida */
-    .welcome-container {
-        background: linear-gradient(135deg, rgba(0, 255, 136, 0.05) 0%, rgba(0, 212, 255, 0.05) 100%);
-        border-radius: 24px;
-        padding: 60px;
-        margin: 40px 0;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(20px);
+    .big-signal {
         text-align: center;
+        padding: 40px;
+        border-radius: 16px;
+        margin: 30px 0;
+        border: 3px solid;
+        font-size: 48px;
+        font-weight: 700;
     }
     
-    /* Estilo de dataframe */
-    .stDataFrame {
-        background: rgba(255, 255, 255, 0.02);
-        border-radius: 12px;
-        overflow: hidden;
-    }
-    
-    /* Spinner de carga */
-    .stSpinner > div {
-        border-top-color: #00ff88 !important;
-    }
-    
-    /* Barra de desplazamiento */
-    ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.02);
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #00ff88 0%, #00d4ff 100%);
-        border-radius: 10px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(135deg, #00d4ff 0%, #7b2ff7 100%);
-    }
-    
-    /* Divisor */
-    hr {
-        border: none;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-        margin: 40px 0;
-    }
-    
-    /* Eliminar marca de Streamlit */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
-    /* Texto responsivo */
-    @media (max-width: 768px) {
-        h1 { font-size: 36px !important; }
-        .signal-title { font-size: 32px; }
-        .signal-description { font-size: 16px; }
-    }
-    
-    /* Créditos del autor */
-    .author-credit {
+    .footer-credit {
         position: fixed;
         bottom: 20px;
         right: 20px;
-        background: linear-gradient(135deg, rgba(10, 14, 39, 0.95) 0%, rgba(26, 31, 58, 0.95) 100%);
-        backdrop-filter: blur(20px);
-        border-radius: 12px;
-        padding: 12px 20px;
-        border: 1px solid rgba(0, 255, 136, 0.3);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        background-color: rgba(26, 31, 46, 0.95);
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: 1px solid #00ff88;
         z-index: 999;
-        transition: all 0.3s ease;
+        font-size: 13px;
     }
     
-    .author-credit:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 40px rgba(0, 255, 136, 0.3);
-    }
-    
-    .author-credit a {
+    .footer-credit a {
         color: #00ff88;
         text-decoration: none;
-        font-weight: 600;
-        font-size: 14px;
-    }
-    
-    .author-credit a:hover {
-        color: #00d4ff;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -509,6 +175,11 @@ class GeraldineWeissAnalyzer:
             data = yf.download(self.ticker, start=start_date, end=end_date, progress=False)
             if data.empty:
                 return None
+            
+            # Aplanar MultiIndex si existe
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+            
             data.index = pd.to_datetime(data.index)
             return data
         except Exception:
@@ -562,6 +233,14 @@ class GeraldineWeissAnalyzer:
     def calculate_valuation_bands(self, prices, annual_dividends):
         """Calcula bandas de sobrevaloración e infravaloración"""
         prices = prices.copy()
+        
+        # Asegurarse de que tenemos la columna 'Close'
+        if 'Close' not in prices.columns:
+            if 'close' in prices.columns:
+                prices = prices.rename(columns={'close': 'Close'})
+            else:
+                return None
+        
         prices['year'] = prices.index.year
         
         merged = prices.merge(annual_dividends, on='year', how='inner')
@@ -609,124 +288,61 @@ class GeraldineWeissAnalyzer:
 
 
 def plot_geraldine_weiss(analysis_df, ticker):
-    """Crea gráfico premium de Geraldine Weiss"""
+    """Crea gráfico de Geraldine Weiss"""
     fig = go.Figure()
     
-    # Área de relleno entre bandas
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['overvalued'],
         name='Sobrevalorada',
-        line=dict(color='rgba(0,0,0,0)'),
-        showlegend=False,
-        hoverinfo='skip'
+        line=dict(color='#ff6b6b', width=3),
+        mode='lines'
     ))
     
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['undervalued'],
-        name='Rango de Valor Razonable',
+        name='Infravalorada',
+        line=dict(color='#00ff88', width=3),
+        mode='lines',
         fill='tonexty',
-        fillcolor='rgba(0, 255, 136, 0.08)',
-        line=dict(color='rgba(0,0,0,0)'),
-        showlegend=True,
-        hoverinfo='skip'
+        fillcolor='rgba(0, 255, 136, 0.1)'
     ))
     
-    # Línea de sobrevaloración
-    fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['overvalued'],
-        name='Zona Sobrevalorada',
-        line=dict(color='#ff6b6b', width=3, dash='solid'),
-        mode='lines',
-        hovertemplate='<b>Sobrevalorada</b><br>Precio: $%{y:.2f}<br>Fecha: %{x}<extra></extra>'
-    ))
-    
-    # Línea de infravaloración
-    fig.add_trace(go.Scatter(
-        x=analysis_df.index,
-        y=analysis_df['undervalued'],
-        name='Zona Infravalorada',
-        line=dict(color='#00ff88', width=3, dash='solid'),
-        mode='lines',
-        hovertemplate='<b>Infravalorada</b><br>Precio: $%{y:.2f}<br>Fecha: %{x}<extra></extra>'
-    ))
-    
-    # Precio actual con efecto de degradado
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['Close'],
         name='Precio Actual',
-        line=dict(
-            color='#00d4ff',
-            width=4,
-        ),
-        mode='lines',
-        hovertemplate='<b>Precio</b><br>$%{y:.2f}<br>Fecha: %{x}<extra></extra>'
+        line=dict(color='#00d4ff', width=4),
+        mode='lines'
     ))
     
-    # Marcador para el precio actual
     latest = analysis_df.iloc[-1]
     fig.add_trace(go.Scatter(
         x=[analysis_df.index[-1]],
         y=[latest['Close']],
         mode='markers',
-        marker=dict(
-            size=15,
-            color='#00d4ff',
-            line=dict(color='white', width=2)
-        ),
+        marker=dict(size=15, color='#00d4ff', line=dict(color='white', width=2)),
         showlegend=False,
         hovertemplate=f'<b>Actual: ${latest["Close"]:.2f}</b><extra></extra>'
     ))
     
     fig.update_layout(
-        title=dict(
-            text=f'<b>{ticker}</b> · Modelo de Valoración Geraldine Weiss',
-            font=dict(size=28, color='white', family='Inter'),
-            x=0.5,
-            xanchor='center'
-        ),
-        xaxis=dict(
-            title='',
-            gridcolor='rgba(255, 255, 255, 0.05)',
-            showgrid=True,
-            zeroline=False,
-            color='rgba(255, 255, 255, 0.7)'
-        ),
-        yaxis=dict(
-            title='Precio (USD)',
-            gridcolor='rgba(255, 255, 255, 0.05)',
-            showgrid=True,
-            zeroline=False,
-            color='rgba(255, 255, 255, 0.7)',
-            tickprefix='$'
-        ),
-        plot_bgcolor='rgba(10, 14, 39, 0.5)',
-        paper_bgcolor='rgba(0, 0, 0, 0)',
+        title=f'{ticker} - Modelo de Valoración Geraldine Weiss',
+        xaxis_title='Fecha',
+        yaxis_title='Precio (USD)',
+        template='plotly_dark',
         hovermode='x unified',
-        height=550,
-        font=dict(family='Inter', color='white'),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor='rgba(255, 255, 255, 0.05)',
-            bordercolor='rgba(255, 255, 255, 0.1)',
-            borderwidth=1,
-            font=dict(size=12)
-        ),
-        margin=dict(l=60, r=40, t=80, b=60)
+        height=500,
+        plot_bgcolor='#0e1117',
+        paper_bgcolor='#0e1117'
     )
     
     return fig
 
 
 def plot_dividend_history(dividend_df, ticker):
-    """Crea gráfico premium del historial de dividendos"""
+    """Crea gráfico del historial de dividendos"""
     if dividend_df.empty:
         return None
     
@@ -738,74 +354,49 @@ def plot_dividend_history(dividend_df, ticker):
         x=dividend_df['ex_dividend_date'],
         y=dividend_df['amount'],
         name='Dividendo',
-        marker=dict(
-            color=colors,
-            line=dict(color='rgba(255, 255, 255, 0.2)', width=1)
-        ),
+        marker=dict(color=colors),
         hovertemplate='<b>%{x|%Y-%m-%d}</b><br>Monto: $%{y:.3f}<extra></extra>'
     ))
     
     fig.update_layout(
-        title=dict(
-            text=f'<b>{ticker}</b> · Historial de Pagos de Dividendos',
-            font=dict(size=24, color='white', family='Inter'),
-            x=0.5,
-            xanchor='center'
-        ),
-        xaxis=dict(
-            title='',
-            gridcolor='rgba(255, 255, 255, 0.05)',
-            showgrid=False,
-            color='rgba(255, 255, 255, 0.7)'
-        ),
-        yaxis=dict(
-            title='Monto del Dividendo (USD)',
-            gridcolor='rgba(255, 255, 255, 0.05)',
-            showgrid=True,
-            zeroline=False,
-            color='rgba(255, 255, 255, 0.7)',
-            tickprefix='$'
-        ),
-        plot_bgcolor='rgba(10, 14, 39, 0.5)',
-        paper_bgcolor='rgba(0, 0, 0, 0)',
+        title=f'{ticker} - Historial de Pagos de Dividendos',
+        xaxis_title='Fecha',
+        yaxis_title='Monto del Dividendo (USD)',
+        template='plotly_dark',
         height=450,
-        font=dict(family='Inter', color='white'),
-        showlegend=False,
-        margin=dict(l=60, r=40, t=80, b=60)
+        plot_bgcolor='#0e1117',
+        paper_bgcolor='#0e1117'
     )
     
     return fig
 
 
 def plot_dividend_growth(annual_div_df, ticker):
-    """Crea análisis premium de crecimiento de dividendos"""
+    """Crea análisis de crecimiento de dividendos"""
     if annual_div_df.empty:
         return None
     
     fig = make_subplots(
         rows=2, cols=1,
-        subplot_titles=('Tendencia de Dividendos Anuales', 'Tasa de Crecimiento Interanual'),
-        vertical_spacing=0.12,
-        row_heights=[0.55, 0.45]
+        subplot_titles=('Dividendos Anuales', 'Crecimiento Interanual (%)'),
+        vertical_spacing=0.15,
+        row_heights=[0.6, 0.4]
     )
     
-    # Dividendos anuales con gradiente
     fig.add_trace(
         go.Scatter(
             x=annual_div_df['year'],
             y=annual_div_df['annual_dividend'],
             mode='lines+markers',
             name='Dividendo Anual',
-            line=dict(color='#00ff88', width=4),
-            marker=dict(size=12, color='#00ff88', line=dict(color='white', width=2)),
+            line=dict(color='#00ff88', width=3),
+            marker=dict(size=10, color='#00ff88'),
             fill='tozeroy',
-            fillcolor='rgba(0, 255, 136, 0.1)',
-            hovertemplate='<b>%{x}</b><br>Dividendo: $%{y:.2f}<extra></extra>'
+            fillcolor='rgba(0, 255, 136, 0.1)'
         ),
         row=1, col=1
     )
     
-    # Tasa de crecimiento
     if len(annual_div_df) > 1:
         growth = annual_div_df['annual_dividend'].pct_change() * 100
         colors = ['#00ff88' if x >= 0 else '#ff6b6b' for x in growth]
@@ -815,56 +406,21 @@ def plot_dividend_growth(annual_div_df, ticker):
                 x=annual_div_df['year'],
                 y=growth,
                 name='Crecimiento %',
-                marker=dict(
-                    color=colors,
-                    line=dict(color='rgba(255, 255, 255, 0.2)', width=1)
-                ),
-                hovertemplate='<b>%{x}</b><br>Crecimiento: %{y:.1f}%<extra></extra>'
+                marker_color=colors
             ),
             row=2, col=1
         )
     
-    fig.update_xaxes(
-        gridcolor='rgba(255, 255, 255, 0.05)',
-        showgrid=True,
-        color='rgba(255, 255, 255, 0.7)',
-        row=1, col=1
-    )
-    fig.update_xaxes(
-        title_text="Año",
-        gridcolor='rgba(255, 255, 255, 0.05)',
-        showgrid=False,
-        color='rgba(255, 255, 255, 0.7)',
-        row=2, col=1
-    )
-    
-    fig.update_yaxes(
-        title_text="Dividendo (USD)",
-        gridcolor='rgba(255, 255, 255, 0.05)',
-        showgrid=True,
-        zeroline=False,
-        color='rgba(255, 255, 255, 0.7)',
-        tickprefix='$',
-        row=1, col=1
-    )
-    fig.update_yaxes(
-        title_text="Tasa de Crecimiento (%)",
-        gridcolor='rgba(255, 255, 255, 0.05)',
-        showgrid=True,
-        zeroline=True,
-        zerolinecolor='rgba(255, 255, 255, 0.2)',
-        color='rgba(255, 255, 255, 0.7)',
-        ticksuffix='%',
-        row=2, col=1
-    )
+    fig.update_xaxes(title_text="Año", row=2, col=1)
+    fig.update_yaxes(title_text="Dividendo ($)", row=1, col=1)
+    fig.update_yaxes(title_text="Crecimiento (%)", row=2, col=1)
     
     fig.update_layout(
-        height=650,
-        plot_bgcolor='rgba(10, 14, 39, 0.5)',
-        paper_bgcolor='rgba(0, 0, 0, 0)',
-        font=dict(family='Inter', color='white', size=12),
+        height=600,
+        template='plotly_dark',
         showlegend=False,
-        margin=dict(l=60, r=40, t=80, b=60)
+        plot_bgcolor='#0e1117',
+        paper_bgcolor='#0e1117'
     )
     
     return fig
@@ -872,42 +428,58 @@ def plot_dividend_growth(annual_div_df, ticker):
 
 def main():
     # Encabezado
-    st.markdown("<h1>💎 Geraldine Weiss</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'>Plataforma Profesional de Valoración por Dividendos y Estrategia de Inversión</p>", unsafe_allow_html=True)
+    st.title("💎 Geraldine Weiss - Análisis de Dividendos")
+    st.caption("Plataforma Profesional de Valoración por Dividendos y Estrategia de Inversión")
     
     # Barra lateral
     with st.sidebar:
-        st.markdown("### ⚙️ Configuración")
+        st.header("⚙️ Configuración")
         
-        ticker = st.text_input("Ticker de la Acción", value="KO", help="Introduce el símbolo de una acción que pague dividendos")
-        years = st.slider("Período de Análisis", 3, 10, 6, help="Años de datos históricos a analizar")
+        ticker = st.text_input(
+            "Stock Ticker",
+            value="KO",
+            help="Introduce el símbolo de una acción que pague dividendos"
+        )
         
-        st.markdown("---")
+        years = st.slider(
+            "Período de Análisis (años)",
+            min_value=3,
+            max_value=10,
+            value=6,
+            help="Años de datos históricos a analizar"
+        )
         
-        analyze_button = st.button("🔍 Analizar Acción", type="primary", use_container_width=True)
+        st.divider()
         
-        st.markdown("---")
+        analyze_button = st.button(
+            "🔍 Analizar Acción",
+            type="primary",
+            use_container_width=True
+        )
         
-        st.markdown("""
-        <div class='info-box'>
-        <h4 style='margin-top: 0; color: #00d4ff;'>💡 Sobre Este Método</h4>
-        <p style='font-size: 13px; line-height: 1.6; margin-bottom: 0;'>
-        El enfoque de <strong>Geraldine Weiss</strong> identifica valor mediante análisis de rentabilidad por dividendo:
-        </p>
-        <ul style='font-size: 13px; line-height: 1.8; margin-top: 10px;'>
-        <li><strong style='color: #00ff88;'>Alta rentabilidad</strong> = Infravalorada (Compra)</li>
-        <li><strong style='color: #ff6b6b;'>Baja rentabilidad</strong> = Sobrevalorada (Venta)</li>
-        <li><strong style='color: #ffd93d;'>Rango medio</strong> = Valor razonable (Mantener)</li>
-        </ul>
-        </div>
-        """, unsafe_allow_html=True)
+        st.divider()
         
-        st.markdown("""
-        <div style='font-size: 12px; color: rgba(255, 255, 255, 0.5); margin-top: 30px;'>
-        <p><strong>Candidatos Ideales:</strong></p>
-        <p>KO · JNJ · PG · MMM<br>CAT · XOM · CVX · T</p>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.expander("💡 Sobre Este Método"):
+            st.markdown("""
+            El enfoque de **Geraldine Weiss** identifica valor mediante análisis de rentabilidad por dividendo:
+            
+            - **Alta rentabilidad** = Infravalorada (Compra)
+            - **Baja rentabilidad** = Sobrevalorada (Venta)
+            - **Rango medio** = Valor razonable (Mantener)
+            """)
+        
+        with st.expander("📌 Sobre Geraldine Weiss"):
+            st.markdown("""
+            Geraldine Weiss fue pionera en la teoría de valoración mediante rentabilidad por dividendo.
+            
+            **Este método funciona mejor con:**
+            - ✓ Aristócratas de Dividendos
+            - ✓ Pagadores estables de dividendos
+            - ✓ Acciones blue-chip
+            
+            **Candidatos ideales:**  
+            KO, JNJ, PG, MMM, CAT, XOM, CVX, T
+            """)
     
     # Contenido principal
     if analyze_button and ticker:
@@ -918,11 +490,11 @@ def main():
             dividend_data = analyzer.fetch_dividend_data()
             
             if price_data is None or price_data.empty:
-                st.error("❌ No se pudieron obtener datos de precio. Por favor verifica el símbolo del ticker.")
+                st.error("❌ No se pudieron obtener datos de precio. Verifica el ticker.")
                 return
             
             if dividend_data.empty:
-                st.error("❌ No hay datos de dividendos disponibles. Esta estrategia requiere acciones que paguen dividendos.")
+                st.error("❌ No hay datos de dividendos. Esta estrategia requiere acciones que paguen dividendos.")
                 return
             
             annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
@@ -935,14 +507,9 @@ def main():
             signal, description = analyzer.get_current_signal(analysis_df)
             
             # Mensaje de éxito
-            st.markdown(f"""
-            <div class='success-box'>
-            <h4 style='margin: 0; color: #00ff88;'>✅ Análisis Completado</h4>
-            <p style='margin: 8px 0 0 0; font-size: 14px;'>Se analizó exitosamente <strong>{ticker.upper()}</strong> con {len(dividend_data)} pagos de dividendos durante {years} años</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.success(f"✅ Análisis completado para **{ticker.upper()}** con {len(dividend_data)} pagos de dividendos")
             
-            # Banner de señal
+            # Señal principal
             signal_colors = {
                 "COMPRA FUERTE": "#00ff88",
                 "COMPRA": "#51cf66",
@@ -951,19 +518,16 @@ def main():
                 "VENTA FUERTE": "#ff6b6b"
             }
             
-            st.markdown(f"""
-            <div class='signal-banner' style='border-color: {signal_colors.get(signal, "#ffffff")};'>
-                <h2 class='signal-title' style='color: {signal_colors.get(signal, "#ffffff")};'>
-                    {signal}
-                </h2>
-                <p class='signal-description' style='color: rgba(255, 255, 255, 0.9);'>
-                    {description}
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f"""<div class='big-signal' style='border-color: {signal_colors.get(signal, "#ffffff")}; color: {signal_colors.get(signal, "#ffffff")}'>
+                {signal}<br>
+                <div style='font-size: 18px; margin-top: 10px;'>{description}</div>
+                </div>""",
+                unsafe_allow_html=True
+            )
             
             # Métricas clave
-            st.markdown("### 📊 Métricas Clave")
+            st.subheader("📊 Métricas Clave")
             
             latest = analysis_df.iloc[-1]
             current_price = latest['Close']
@@ -975,78 +539,66 @@ def main():
             
             col1, col2, col3, col4 = st.columns(4)
             
-            with col1:
-                st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                st.metric("Precio Actual", f"${current_price:.2f}")
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-            with col2:
-                st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                st.metric("Rentabilidad por Dividendo", f"{current_yield:.2f}%")
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-            with col3:
-                st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                st.metric("Zona Infravalorada", f"${undervalued_price:.2f}", 
-                         delta=f"{upside_to_undervalued:.1f}%",
-                         delta_color="inverse")
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-            with col4:
-                st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                st.metric("Zona Sobrevalorada", f"${overvalued_price:.2f}",
-                         delta=f"{upside_to_overvalued:.1f}%",
-                         delta_color="normal")
-                st.markdown("</div>", unsafe_allow_html=True)
+            col1.metric("Precio Actual", f"${current_price:.2f}")
+            col2.metric("Rentabilidad por Dividendo", f"{current_yield:.2f}%")
+            col3.metric(
+                "Zona Infravalorada",
+                f"${undervalued_price:.2f}",
+                delta=f"{upside_to_undervalued:.1f}%",
+                delta_color="inverse"
+            )
+            col4.metric(
+                "Zona Sobrevalorada",
+                f"${overvalued_price:.2f}",
+                delta=f"{upside_to_overvalued:.1f}%"
+            )
             
             # Pestañas
-            tab1, tab2, tab3, tab4 = st.tabs(["📈 Análisis de Valoración", "💰 Historial de Dividendos", 
-                                               "📊 Métricas de Crecimiento", "📚 Guía de Estrategia"])
+            tab1, tab2, tab3, tab4 = st.tabs([
+                "📈 Análisis de Valoración",
+                "💰 Historial de Dividendos",
+                "📊 Crecimiento",
+                "📚 Guía de Estrategia"
+            ])
             
             with tab1:
-                st.plotly_chart(plot_geraldine_weiss(analysis_df, ticker.upper()), 
-                               use_container_width=True)
+                st.plotly_chart(
+                    plot_geraldine_weiss(analysis_df, ticker.upper()),
+                    use_container_width=True
+                )
                 
-                st.markdown("### 🎯 Interpretación del Gráfico")
+                st.subheader("🎯 Interpretación del Gráfico")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown("""
-                    <div class='info-box' style='border-left-color: #00ff88;'>
-                    <h4 style='color: #00ff88; margin-top: 0;'>🟢 Zona Infravalorada</h4>
-                    <p style='font-size: 14px; line-height: 1.7;'>
-                    Cuando el precio se aproxima a la <strong>línea verde</strong>, la acción ofrece alta rentabilidad por dividendo respecto a su promedio histórico.
-                    </p>
-                    <p style='font-size: 14px; line-height: 1.7; margin-bottom: 0;'>
-                    <strong>Acción:</strong> Considerar acumular acciones<br>
-                    <strong>Perfil de Riesgo:</strong> Menor relativo al rango histórico<br>
-                    <strong>Retorno Esperado:</strong> Apreciación de capital + dividendos
-                    </p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.info("""
+                    **🟢 Zona Infravalorada**
+                    
+                    Cuando el precio se aproxima a la **línea verde**, la acción ofrece alta rentabilidad por dividendo.
+                    
+                    - **Acción:** Considerar comprar
+                    - **Riesgo:** Menor relativo al histórico
+                    - **Retorno:** Apreciación + dividendos
+                    """)
                 
                 with col2:
-                    st.markdown("""
-                    <div class='warning-box' style='border-left-color: #ff6b6b;'>
-                    <h4 style='color: #ff6b6b; margin-top: 0;'>🔴 Zona Sobrevalorada</h4>
-                    <p style='font-size: 14px; line-height: 1.7;'>
-                    Cuando el precio se aproxima a la <strong>línea roja</strong>, la acción ofrece baja rentabilidad por dividendo respecto a su promedio histórico.
-                    </p>
-                    <p style='font-size: 14px; line-height: 1.7; margin-bottom: 0;'>
-                    <strong>Acción:</strong> Considerar toma de beneficios<br>
-                    <strong>Perfil de Riesgo:</strong> Mayor relativo al rango histórico<br>
-                    <strong>Retorno Esperado:</strong> Potencial alcista limitado
-                    </p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.warning("""
+                    **🔴 Zona Sobrevalorada**
+                    
+                    Cuando el precio se aproxima a la **línea roja**, la acción ofrece baja rentabilidad por dividendo.
+                    
+                    - **Acción:** Considerar vender
+                    - **Riesgo:** Mayor relativo al histórico
+                    - **Retorno:** Potencial alcista limitado
+                    """)
             
             with tab2:
                 fig_div = plot_dividend_history(dividend_data, ticker.upper())
                 if fig_div:
                     st.plotly_chart(fig_div, use_container_width=True)
                     
-                    st.markdown("### 📊 Estadísticas de Dividendos")
+                    st.subheader("📊 Estadísticas de Dividendos")
                     
                     col1, col2, col3, col4 = st.columns(4)
                     
@@ -1055,27 +607,12 @@ def main():
                     latest_div = dividend_data.iloc[0]['amount']
                     total_paid = dividend_data['amount'].sum()
                     
-                    with col1:
-                        st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                        st.metric("Pagos Totales", f"{total_divs:,}")
-                        st.markdown("</div>", unsafe_allow_html=True)
-                        
-                    with col2:
-                        st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                        st.metric("Pago Promedio", f"${avg_div:.3f}")
-                        st.markdown("</div>", unsafe_allow_html=True)
-                        
-                    with col3:
-                        st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                        st.metric("Último Pago", f"${latest_div:.3f}")
-                        st.markdown("</div>", unsafe_allow_html=True)
-                        
-                    with col4:
-                        st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                        st.metric("Total Acumulado", f"${total_paid:.2f}")
-                        st.markdown("</div>", unsafe_allow_html=True)
+                    col1.metric("Pagos Totales", f"{total_divs:,}")
+                    col2.metric("Pago Promedio", f"${avg_div:.3f}")
+                    col3.metric("Último Pago", f"${latest_div:.3f}")
+                    col4.metric("Total Acumulado", f"${total_paid:.2f}")
                     
-                    st.markdown("### 📅 Pagos de Dividendos Recientes")
+                    st.subheader("📅 Pagos Recientes")
                     recent = dividend_data.head(12).copy()
                     recent['ex_dividend_date'] = recent['ex_dividend_date'].dt.strftime('%Y-%m-%d')
                     recent.columns = ['Fecha Ex-Dividendo', 'Monto']
@@ -1088,7 +625,7 @@ def main():
                     st.plotly_chart(fig_growth, use_container_width=True)
                     
                     if len(annual_dividends) > 1:
-                        st.markdown("### 📈 Análisis de Crecimiento")
+                        st.subheader("📈 Análisis de Crecimiento")
                         
                         cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
                                 annual_dividends['annual_dividend'].iloc[0]) ** 
@@ -1100,156 +637,121 @@ def main():
                         
                         col1, col2, col3, col4 = st.columns(4)
                         
-                        with col1:
-                            st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                            st.metric("CAGR de Dividendos", f"{cagr:.2f}%")
-                            st.markdown("</div>", unsafe_allow_html=True)
-                            
-                        with col2:
-                            st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                            st.metric("Crecimiento Anual Promedio", f"{avg_growth:.2f}%")
-                            st.markdown("</div>", unsafe_allow_html=True)
-                            
-                        with col3:
-                            st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                            st.metric("Años Analizados", years_data)
-                            st.markdown("</div>", unsafe_allow_html=True)
-                            
-                        with col4:
-                            st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-                            st.metric("Último Dividendo Anual", f"${latest_annual:.2f}")
-                            st.markdown("</div>", unsafe_allow_html=True)
+                        col1.metric("CAGR de Dividendos", f"{cagr:.2f}%")
+                        col2.metric("Crecimiento Anual Promedio", f"{avg_growth:.2f}%")
+                        col3.metric("Años Analizados", years_data)
+                        col4.metric("Último Dividendo Anual", f"${latest_annual:.2f}")
             
             with tab4:
-                col1, col2 = st.columns([1, 1])
+                col1, col2 = st.columns(2)
                 
                 with col1:
                     st.markdown("""
                     ### 🎓 Resumen de la Estrategia
                     
-                    **El Método de Geraldine Weiss** es un enfoque probado de valoración por dividendos que identifica oportunidades de compra y venta basándose en patrones históricos de rentabilidad por dividendo.
+                    **El Método de Geraldine Weiss** identifica oportunidades mediante patrones históricos de rentabilidad por dividendo.
                     
                     #### Filosofía Central
                     
-                    Los precios de las acciones fluctúan, pero las empresas de calidad mantienen pagos de dividendos estables. Esto crea patrones predecibles de rentabilidad que señalan valor.
+                    Los precios fluctúan, pero empresas de calidad mantienen dividendos estables, creando patrones predecibles.
                     
                     #### Principios Clave
                     
-                    **Alta Rentabilidad por Dividendo** → Acción infravalorada  
-                    **Baja Rentabilidad por Dividendo** → Acción sobrevalorada  
-                    **Reversión a la Media** → Las rentabilidades vuelven al promedio histórico
+                    - **Alta Rentabilidad** → Acción infravalorada
+                    - **Baja Rentabilidad** → Acción sobrevalorada
+                    - **Reversión a la Media** → Las rentabilidades vuelven al promedio
                     
                     #### Implementación
                     
-                    1. **Zona de Compra**: Entrar cuando el precio cruza al territorio infravalorado
-                    2. **Mantener**: Conservar la posición mientras se cobran dividendos
-                    3. **Zona de Venta**: Salir cuando el precio alcanza niveles sobrevalorados
-                    4. **Repetir**: Reinvertir las ganancias en nuevas oportunidades infravaloradas
-                    
+                    1. **Compra**: Cuando precio entra en zona infravalorada
+                    2. **Mantener**: Conservar posición cobrando dividendos
+                    3. **Venta**: Cuando precio alcanza zona sobrevalorada
+                    4. **Repetir**: Reinvertir en nuevas oportunidades
                     """)
                 
                 with col2:
                     st.markdown("""
                     ### ✅ Candidatos Ideales
+                    """)
                     
-                    <div class='success-box'>
-                    <p style='margin: 0; font-size: 14px; line-height: 1.8;'>
-                    <strong>Aristócratas de Dividendos</strong><br>
-                    25+ años consecutivos de aumentos de dividendos
-                    </p>
-                    </div>
+                    st.success("""
+                    **Aristócratas de Dividendos**  
+                    25+ años de aumentos consecutivos
+                    """)
                     
-                    <div class='success-box'>
-                    <p style='margin: 0; font-size: 14px; line-height: 1.8;'>
-                    <strong>Empresas Blue-Chip</strong><br>
-                    Líderes del mercado establecidos con flujos de caja estables
-                    </p>
-                    </div>
+                    st.success("""
+                    **Empresas Blue-Chip**  
+                    Líderes del mercado con flujos estables
+                    """)
                     
-                    <div class='success-box'>
-                    <p style='margin: 0; font-size: 14px; line-height: 1.8;'>
-                    <strong>Pagadores Consistentes</strong><br>
-                    Dividendos trimestrales regulares sin recortes
-                    </p>
-                    </div>
+                    st.success("""
+                    **Pagadores Consistentes**  
+                    Dividendos regulares sin recortes
+                    """)
                     
-                    ### ⚠️ Consideraciones de Riesgo
+                    st.markdown("### ⚠️ Consideraciones de Riesgo")
                     
-                    <div class='warning-box'>
-                    <ul style='margin: 0; font-size: 14px; line-height: 1.8; padding-left: 20px;'>
-                    <li>Verificar sostenibilidad del dividendo (payout ratio < 60%)</li>
-                    <li>Monitorear continuamente los fundamentos de la empresa</li>
-                    <li>Diversificar entre múltiples sectores</li>
-                    <li>Evitar industrias cíclicas o volátiles</li>
-                    <li>Nunca depender de una única métrica de valoración</li>
-                    </ul>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.warning("""
+                    - Verificar sostenibilidad (payout ratio < 60%)
+                    - Monitorear fundamentos continuamente
+                    - Diversificar entre sectores
+                    - Evitar industrias cíclicas/volátiles
+                    - No depender de una sola métrica
+                    """)
                 
-                st.markdown("---")
+                st.divider()
                 
                 st.markdown("""
                 ### 📊 Rendimiento Histórico
                 
                 La estrategia de Geraldine Weiss ha entregado históricamente:
                 
-                - **15-20% de descuento** de entrada al valor razonable
-                - **15-20% de prima** de salida al valor razonable  
-                - **Ingresos por dividendos consistentes** durante todo el período de tenencia
-                - **Apreciación de capital a largo plazo** de empresas de calidad
-                - **Menor volatilidad** comparada con estrategias enfocadas en crecimiento
+                - **15-20% de descuento** en entrada al valor razonable
+                - **15-20% de prima** en salida al valor razonable
+                - **Ingresos consistentes** por dividendos
+                - **Apreciación de capital** a largo plazo
+                - **Menor volatilidad** vs estrategias de crecimiento
+                """)
                 
-                ---
-                
-                <div style='background: rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.3); border-radius: 12px; padding: 20px; margin-top: 30px;'>
-                <p style='margin: 0; font-size: 13px; color: rgba(255, 255, 255, 0.8); line-height: 1.6;'>
-                <strong style='color: #ff6b6b;'>⚠️ Aviso Legal:</strong> Esta herramienta es solo para fines educativos e informativos. 
-                No constituye asesoramiento financiero, recomendaciones de inversión ni una oferta de compra o venta de valores. 
-                Siempre realiza una investigación exhaustiva y consulta con un asesor financiero cualificado antes de tomar decisiones de inversión. 
+                st.error("""
+                **⚠️ Aviso Legal:** Esta herramienta es solo para fines educativos e informativos. 
+                No constituye asesoramiento financiero. Consulta con un asesor cualificado antes de invertir.
                 El rendimiento pasado no garantiza resultados futuros.
-                </p>
-                </div>
-                """, unsafe_allow_html=True)
+                """)
     
     else:
         # Pantalla de bienvenida
-        col1, col2, col3 = st.columns([1, 2, 1])
+        st.info("""
+        ### 👋 Bienvenido al Analizador Geraldine Weiss
         
-        with col2:
-            st.markdown("""
-            <div class='welcome-container'>
-                <h2 style='margin-top: 0; font-size: 36px;'>👋 Bienvenido</h2>
-                <p style='font-size: 18px; color: rgba(255, 255, 255, 0.8); line-height: 1.8; margin: 20px 0;'>
-                Una plataforma profesional que implementa la legendaria metodología de valoración por dividendos de <strong>Geraldine Weiss</strong>.
-                </p>
-                
-                <div style='background: rgba(0, 212, 255, 0.1); border-radius: 12px; padding: 30px; margin: 30px 0;'>
-                    <h3 style='margin-top: 0; color: #00d4ff;'>🎯 Lo Que Ofrece Esta Herramienta</h3>
-                    <ul style='text-align: left; font-size: 15px; line-height: 2; color: rgba(255, 255, 255, 0.9);'>
-                        <li>Análisis histórico de rentabilidad por dividendo</li>
-                        <li>Bandas dinámicas de valoración (sobrevalorada/infravalorada)</li>
-                        <li>Señales claras de compra/venta/mantener</li>
-                        <li>Seguimiento completo de pagos de dividendos</li>
-                        <li>Cálculos de tasa de crecimiento y CAGR</li>
-                        <li>Visualizaciones interactivas</li>
-                    </ul>
-                </div>
-                
-                <p style='font-size: 16px; margin: 30px 0;'>
-                Introduce un símbolo ticker en la barra lateral para comenzar tu análisis
-                </p>
-                
-                <div style='background: rgba(0, 255, 136, 0.05); border-radius: 8px; padding: 16px; margin-top: 20px;'>
-                    <p style='margin: 0; font-size: 14px; color: rgba(255, 255, 255, 0.7);'>
-                    <strong>Tickers Populares:</strong> KO · JNJ · PG · MMM · CAT · XOM · CVX
-                    </p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        Esta herramienta profesional implementa la legendaria metodología de valoración por dividendos.
+        """)
+        
+        st.markdown("""
+        #### 🎯 Lo Que Ofrece Esta Herramienta
+        
+        - Análisis histórico de rentabilidad por dividendo
+        - Bandas dinámicas de valoración (sobrevalorada/infravalorada)
+        - Señales claras de compra/venta/mantener
+        - Seguimiento completo de pagos de dividendos
+        - Cálculos de tasa de crecimiento y CAGR
+        - Visualizaciones interactivas
+        
+        #### 🚀 Cómo Empezar
+        
+        1. Introduce un ticker en la barra lateral
+        2. Ajusta el período de análisis (3-10 años)
+        3. Haz clic en "Analizar Acción"
+        
+        **Tickers sugeridos:** KO, JNJ, PG, MMM, CAT, XOM, CVX, T
+        """)
+        
+        st.image("https://via.placeholder.com/1200x400/1a1f2e/00ff88?text=Introduce+un+ticker+para+comenzar", 
+                use_container_width=True)
     
-    # Créditos del autor (siempre visible)
+    # Créditos del autor
     st.markdown("""
-    <div class='author-credit'>
+    <div class='footer-credit'>
         Desarrollado por <a href='https://bquantfinance.com' target='_blank'>@Gsnchez | bquantfinance.com</a>
     </div>
     """, unsafe_allow_html=True)
