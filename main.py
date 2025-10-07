@@ -89,13 +89,10 @@ class DividendDataFetcher:
     def __init__(self):
         self.base_url = "https://dividendhistory.org/payout"
         self.session = requests.Session()
-        self.headers = {
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
         self.cache = {}
     
     def fetch_dividends(self, ticker: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
-        """Obtiene dividendos mediante web scraping"""
+        """Obtiene dividendos mediante web scraping con debugging mejorado"""
         cache_key = f"{ticker}_{start_date}_{end_date}"
         if cache_key in self.cache:
             return self.cache[cache_key].copy()
@@ -103,7 +100,7 @@ class DividendDataFetcher:
         url = f"{self.base_url}/{ticker}/"
         
         try:
-            # Headers mejorados para evitar bloqueos
+            # Headers mejorados
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -117,77 +114,131 @@ class DividendDataFetcher:
                 'Cache-Control': 'max-age=0'
             }
             
+            # DEBUG: Mostrar URL
+            st.info(f"🔍 Intentando scraping: {url}")
+            
             response = self.session.get(url, headers=headers, timeout=20, allow_redirects=True)
+            
+            # DEBUG: Mostrar código de respuesta
+            st.write(f"📡 Status Code: {response.status_code}")
+            st.write(f"📏 Response Length: {len(response.text)} caracteres")
+            
             response.raise_for_status()
             
-            # Verificar si la respuesta es válida
+            # DEBUG: Verificar si hay contenido
             if len(response.text) < 100:
+                st.error(f"❌ Respuesta muy corta: {len(response.text)} caracteres")
+                st.code(response.text[:500])
                 return pd.DataFrame()
             
+            # DEBUG: Mostrar primeros caracteres de la respuesta
+            with st.expander("🔍 Ver HTML recibido (primeros 1000 caracteres)"):
+                st.code(response.text[:1000])
+            
+            # Intentar parsear tablas
             tables = pd.read_html(StringIO(response.text))
+            
+            st.write(f"📊 Tablas encontradas: {len(tables)}")
+            
             if not tables:
+                st.error("❌ No se encontraron tablas en el HTML")
                 return pd.DataFrame()
             
+            # DEBUG: Mostrar información de cada tabla
             df = None
             for table_idx, table in enumerate(tables):
+                st.write(f"📋 Tabla {table_idx + 1}: {table.shape[0]} filas, {table.shape[1]} columnas")
+                st.write(f"Columnas: {list(table.columns)}")
+                
                 temp_df = table.copy()
                 temp_df.columns = [str(col).strip() for col in temp_df.columns]
                 
+                # Si todas las columnas son números, probablemente la primera fila son los headers
                 if all(col.isdigit() for col in temp_df.columns):
+                    st.write("⚠️ Columnas son números, usando primera fila como headers")
                     temp_df.columns = temp_df.iloc[0].astype(str).str.strip().tolist()
                     temp_df = temp_df.iloc[1:].reset_index(drop=True)
+                    st.write(f"Nuevas columnas: {list(temp_df.columns)}")
                 
+                # Buscar la tabla correcta
                 if 'Ex-Dividend Date' in temp_df.columns or 'Cash Amount' in temp_df.columns:
+                    st.success(f"✅ Tabla {table_idx + 1} contiene datos de dividendos")
                     df = temp_df
                     break
+                else:
+                    st.write(f"⏭️ Tabla {table_idx + 1} no contiene columnas esperadas")
             
             if df is None:
+                st.error("❌ No se encontró tabla con datos de dividendos")
                 return pd.DataFrame()
             
+            # Mapear columnas
             column_mapping = {
                 'Ex-Dividend Date': 'ex_dividend_date',
                 'Payout Date': 'payout_date',
                 'Cash Amount': 'amount',
                 '% Change': 'pct_change'
             }
+            
+            st.write(f"🔄 Mapeando columnas...")
             df = df.rename(columns=column_mapping)
             
             if 'ex_dividend_date' not in df.columns:
+                st.error(f"❌ Columna 'ex_dividend_date' no encontrada después del mapeo")
+                st.write(f"Columnas disponibles: {list(df.columns)}")
                 return pd.DataFrame()
             
+            # Procesar fechas
             df['ex_dividend_date'] = pd.to_datetime(df['ex_dividend_date'], errors='coerce')
             if 'payout_date' in df.columns:
                 df['payout_date'] = pd.to_datetime(df['payout_date'], errors='coerce')
             
+            # Procesar montos
             if 'amount' in df.columns:
                 df['amount'] = df['amount'].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False).str.strip()
                 df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
             
+            # Filtrar datos válidos
             df = df[df['ex_dividend_date'].notna()]
             df = df[df['amount'].notna()]
             df = df[df['amount'] > 0]
             
+            st.write(f"✅ Datos válidos después de limpieza: {len(df)} registros")
+            
+            # Filtrar por rango de fechas
             if start_date:
                 df = df[df['ex_dividend_date'] >= pd.to_datetime(start_date)]
             if end_date:
                 df = df[df['ex_dividend_date'] <= pd.to_datetime(end_date)]
             
+            st.write(f"📅 Datos en rango de fechas: {len(df)} registros")
+            
             df = df.sort_values('ex_dividend_date', ascending=False).reset_index(drop=True)
             
             if not df.empty:
                 self.cache[cache_key] = df.copy()
+                # Mostrar muestra de datos
+                with st.expander("👀 Ver muestra de datos obtenidos"):
+                    st.dataframe(df.head(10))
             
             return df
             
         except requests.exceptions.Timeout:
+            st.error("❌ Timeout al conectar con dividendhistory.org")
             return pd.DataFrame()
         except requests.exceptions.ConnectionError:
+            st.error("❌ Error de conexión con dividendhistory.org")
             return pd.DataFrame()
         except requests.exceptions.HTTPError as e:
+            st.error(f"❌ HTTP Error: {e.response.status_code}")
             if e.response.status_code == 404:
-                return pd.DataFrame()
+                st.warning("La página no existe (404)")
             return pd.DataFrame()
-        except Exception:
+        except Exception as e:
+            st.error(f"❌ Error inesperado: {str(e)}")
+            import traceback
+            with st.expander("🐛 Ver traceback completo"):
+                st.code(traceback.format_exc())
             return pd.DataFrame()
 
 
@@ -235,24 +286,26 @@ class GeraldineWeissAnalyzer:
         if not has_suffix:
             # SIN SUFIJO = USA → usar dividendhistory.org
             st.info(f"🇺🇸 Ticker USA detectado ({self.ticker}). Usando dividendhistory.org...")
-            try:
-                df = self.dividend_fetcher.fetch_dividends(
-                    self.ticker, 
-                    start_date.strftime('%Y-%m-%d'),
-                    end_date.strftime('%Y-%m-%d')
-                )
-                
-                if not df.empty:
-                    st.success(f"✅ Encontrados {len(df)} pagos de dividendos desde dividendhistory.org")
-                    return df
-                else:
-                    st.warning(f"⚠️ dividendhistory.org no retornó datos. Intentando con yfinance como fallback...")
-                    # Fallback a yfinance si dividendhistory falla
+            
+            with st.expander("🔧 Debug: Proceso de scraping de dividendhistory.org"):
+                try:
+                    df = self.dividend_fetcher.fetch_dividends(
+                        self.ticker, 
+                        start_date.strftime('%Y-%m-%d'),
+                        end_date.strftime('%Y-%m-%d')
+                    )
+                    
+                    if not df.empty:
+                        st.success(f"✅ Encontrados {len(df)} pagos de dividendos desde dividendhistory.org")
+                        return df
+                    else:
+                        st.warning(f"⚠️ dividendhistory.org no retornó datos. Intentando con yfinance como fallback...")
+                        # Fallback a yfinance si dividendhistory falla
+                        return self._fetch_from_yfinance(start_date)
+                except Exception as e:
+                    st.warning(f"⚠️ Error con dividendhistory.org: {str(e)}")
+                    st.info(f"🔄 Intentando con yfinance como fallback...")
                     return self._fetch_from_yfinance(start_date)
-            except Exception as e:
-                st.warning(f"⚠️ Error con dividendhistory.org: {str(e)[:80]}")
-                st.info(f"🔄 Intentando con yfinance como fallback...")
-                return self._fetch_from_yfinance(start_date)
         else:
             # CON SUFIJO = Europa/Internacional → usar yfinance
             st.info(f"🌍 Ticker internacional detectado ({self.ticker}). Usando yfinance...")
@@ -388,28 +441,22 @@ def analyze_ticker_quick(ticker, years=6):
         # Paso 1: Obtener datos de precio
         price_data = analyzer.fetch_price_data()
         if price_data is None or price_data.empty:
-            st.warning(f"Debug {ticker}: No se pudieron obtener datos de precio")
             return None
         
         # Paso 2: Obtener datos de dividendos
         dividend_data = analyzer.fetch_dividend_data()
         if dividend_data.empty:
-            st.warning(f"Debug {ticker}: No se encontraron datos de dividendos")
             return None
         
         # Paso 3: Calcular dividendos anuales
         annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
         if annual_dividends.empty:
-            st.warning(f"Debug {ticker}: No se pudieron calcular dividendos anuales")
             return None
         
         # Paso 4: Calcular bandas de valoración
         analysis_df = analyzer.calculate_valuation_bands(price_data, annual_dividends)
         
         if analysis_df is None or analysis_df.empty:
-            st.warning(f"Debug {ticker}: No se pudieron calcular bandas de valoración")
-            st.write(f"Años de precios: {price_data['year'].nunique() if 'year' in price_data.columns else 'N/A'}")
-            st.write(f"Años de dividendos: {len(annual_dividends)}")
             return None
         
         signal, description, score = analyzer.get_current_signal(analysis_df)
@@ -439,9 +486,7 @@ def analyze_ticker_quick(ticker, years=6):
             'dividend_data': dividend_data
         }
     except Exception as e:
-        st.error(f"Debug {ticker}: Error en análisis - {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
+        st.error(f"Error en análisis de {ticker}: {str(e)}")
         return None
 
 
