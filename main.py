@@ -205,81 +205,93 @@ class GeraldineWeissAnalyzer:
         self.dividend_fetcher = DividendDataFetcher()
         self.data_source = None
         
-    
-def fetch_price_data(self):
-    """Obtiene datos históricos de precios con corrección automática"""
-    end_date = datetime.now()
-    start_date = end_date - relativedelta(years=self.years)
-    
-    try:
-        # Obtener datos históricos SIN ajustes automáticos
-        data = yf.download(
-            self.ticker, 
-            start=start_date, 
-            end=end_date, 
-            progress=False,
-            auto_adjust=False
-        )
+    def fetch_price_data(self):
+        """Obtiene datos históricos de precios con corrección automática"""
+        end_date = datetime.now()
+        start_date = end_date - relativedelta(years=self.years)
         
-        if data.empty:
-            return None
-        
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-        
-        data.index = pd.to_datetime(data.index)
-        
-        # Validación automática del precio actual
-        if 'Close' in data.columns and len(data) > 0:
-            historical_latest = data['Close'].iloc[-1]
+        try:
+            # Intento 1: Datos sin auto_adjust
+            data = yf.download(
+                self.ticker, 
+                start=start_date, 
+                end=end_date, 
+                progress=False,
+                auto_adjust=False
+            )
             
-            # Obtener precio actual real
-            try:
-                ticker_obj = yf.Ticker(self.ticker)
-                info = ticker_obj.info
-                
-                # Buscar precio actual en múltiples campos
-                real_price = (
-                    info.get('currentPrice') or 
-                    info.get('regularMarketPrice') or
-                    info.get('regularMarketPreviousClose') or
-                    info.get('previousClose')
+            if data.empty:
+                # Intento 2: Con auto_adjust si falla el primero
+                data = yf.download(
+                    self.ticker, 
+                    start=start_date, 
+                    end=end_date, 
+                    progress=False,
+                    auto_adjust=True
                 )
-                
-                # Si encontramos precio real y hay discrepancia significativa
-                if real_price and real_price > 0:
-                    discrepancy = abs(historical_latest - real_price) / real_price
-                    
-                    if discrepancy > 0.05:  # Más del 5% de diferencia
-                        # Ajustar toda la serie temporal proporcionalmente
-                        adjustment_factor = real_price / historical_latest
-                        
-                        data['Close'] = data['Close'] * adjustment_factor
-                        if 'Open' in data.columns:
-                            data['Open'] = data['Open'] * adjustment_factor
-                        if 'High' in data.columns:
-                            data['High'] = data['High'] * adjustment_factor
-                        if 'Low' in data.columns:
-                            data['Low'] = data['Low'] * adjustment_factor
-                        if 'Adj Close' in data.columns:
-                            data['Adj Close'] = data['Adj Close'] * adjustment_factor
             
-            except:
-                # Si falla la validación, usar datos originales
-                pass
-        
-        return data
-        
-    except Exception:
-        return None
+            if data.empty:
+                return None
+            
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+            
+            data.index = pd.to_datetime(data.index)
+            
+            # Validación automática del precio actual
+            if 'Close' in data.columns and len(data) > 0:
+                historical_latest = data['Close'].iloc[-1]
+                
+                try:
+                    ticker_obj = yf.Ticker(self.ticker)
+                    info = ticker_obj.info
+                    
+                    # Buscar precio actual en múltiples campos
+                    real_price = (
+                        info.get('currentPrice') or 
+                        info.get('regularMarketPrice') or
+                        info.get('regularMarketPreviousClose') or
+                        info.get('previousClose')
+                    )
+                    
+                    # Si encontramos precio real y hay discrepancia
+                    if real_price and real_price > 0 and historical_latest > 0:
+                        discrepancy = abs(historical_latest - real_price) / real_price
+                        
+                        if discrepancy > 0.05:  # Más del 5% de diferencia
+                            adjustment_factor = real_price / historical_latest
+                            
+                            data['Close'] = data['Close'] * adjustment_factor
+                            if 'Open' in data.columns:
+                                data['Open'] = data['Open'] * adjustment_factor
+                            if 'High' in data.columns:
+                                data['High'] = data['High'] * adjustment_factor
+                            if 'Low' in data.columns:
+                                data['Low'] = data['Low'] * adjustment_factor
+                            if 'Adj Close' in data.columns:
+                                data['Adj Close'] = data['Adj Close'] * adjustment_factor
+                
+                except:
+                    pass
+            
+            return data
+            
+        except Exception:
+            return None
     
     def fetch_dividend_data(self):
         """Obtiene datos de dividendos con lógica clara de fuentes"""
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
-        has_suffix = '.' in self.ticker
+        # Primero intentar siempre con yfinance (más confiable)
+        df = self._fetch_from_yfinance(start_date)
+        if not df.empty:
+            self.data_source = "yfinance"
+            return df
         
+        # Si falla yfinance y es ticker US (sin sufijo), intentar dividendhistory
+        has_suffix = '.' in self.ticker
         if not has_suffix:
             try:
                 df = self.dividend_fetcher.fetch_dividends(
@@ -293,20 +305,31 @@ def fetch_price_data(self):
                     return df
             except Exception:
                 pass
-            
-            self.data_source = "yfinance"
-            return self._fetch_from_yfinance(start_date)
-        else:
-            self.data_source = "yfinance"
-            return self._fetch_from_yfinance(start_date)
+        
+        # Si todo falla, retornar vacío
+        self.data_source = "none"
+        return pd.DataFrame()
     
     def _fetch_from_yfinance(self, start_date):
         """Helper para obtener dividendos desde yfinance"""
         try:
             ticker_obj = yf.Ticker(self.ticker)
+            
+            # Intentar con dividends
             divs = ticker_obj.dividends
             
+            if divs.empty:
+                # Intentar con actions
+                try:
+                    actions = ticker_obj.actions
+                    if 'Dividends' in actions.columns:
+                        divs = actions['Dividends']
+                        divs = divs[divs > 0]
+                except:
+                    pass
+            
             if not divs.empty:
+                # Manejo de timezone
                 if divs.index.tz is not None:
                     if start_date.tzinfo is None:
                         start_date = pytz.UTC.localize(start_date)
@@ -322,6 +345,7 @@ def fetch_price_data(self):
                         'ex_dividend_date': divs.index.tz_localize(None) if divs.index.tz is not None else divs.index,
                         'amount': divs.values
                     })
+                    df = df[df['amount'] > 0]
                     df = df.sort_values('ex_dividend_date', ascending=False).reset_index(drop=True)
                     return df
             
@@ -337,14 +361,21 @@ def fetch_price_data(self):
         dividend_df = dividend_df.copy()
         dividend_df['year'] = dividend_df['ex_dividend_date'].dt.year
         
+        # Filtrar outliers
         mean_div = dividend_df['amount'].mean()
         std_div = dividend_df['amount'].std()
-        dividend_df = dividend_df[
-            abs(dividend_df['amount'] - mean_div) <= (2.5 * std_div)
-        ]
+        if std_div > 0:
+            dividend_df = dividend_df[
+                abs(dividend_df['amount'] - mean_div) <= (2.5 * std_div)
+            ]
         
         annual = dividend_df.groupby('year')['amount'].sum().reset_index()
         annual.columns = ['year', 'annual_dividend']
+        
+        # Filtrar años con dividendos muy bajos (posibles errores)
+        if len(annual) > 0:
+            median_div = annual['annual_dividend'].median()
+            annual = annual[annual['annual_dividend'] > median_div * 0.1]
         
         return annual
     
@@ -362,15 +393,26 @@ def fetch_price_data(self):
         
         merged = prices.merge(annual_dividends, on='year', how='inner')
         
-        if merged.empty:
+        if merged.empty or len(merged) < 10:
             return None
         
         merged['div_yield'] = merged['annual_dividend'] / merged['Close']
         
-        max_yield = merged['div_yield'].max()
-        min_yield = merged['div_yield'].min()
+        # Filtrar yields extremos (outliers)
+        yield_median = merged['div_yield'].median()
+        yield_std = merged['div_yield'].std()
+        if yield_std > 0:
+            merged = merged[
+                abs(merged['div_yield'] - yield_median) <= (3 * yield_std)
+            ]
         
-        if max_yield == 0 or min_yield == 0:
+        if merged.empty:
+            return None
+        
+        max_yield = merged['div_yield'].quantile(0.95)  # Usar percentil 95 en vez de max
+        min_yield = merged['div_yield'].quantile(0.05)  # Usar percentil 5 en vez de min
+        
+        if max_yield == 0 or min_yield == 0 or max_yield <= min_yield:
             return None
         
         merged['undervalued'] = (merged['div_yield'] / max_yield) * merged['Close']
@@ -423,7 +465,7 @@ def analyze_ticker_quick(ticker, years=6):
             return None
         
         annual_dividends = analyzer.calculate_annual_dividends(dividend_data)
-        if annual_dividends.empty:
+        if annual_dividends.empty or len(annual_dividends) < 2:
             return None
         
         analysis_df = analyzer.calculate_valuation_bands(price_data, annual_dividends)
@@ -436,9 +478,10 @@ def analyze_ticker_quick(ticker, years=6):
         cagr = 0
         if len(annual_dividends) > 1:
             try:
-                cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
-                        annual_dividends['annual_dividend'].iloc[0]) ** 
-                       (1 / (len(annual_dividends) - 1)) - 1) * 100
+                first_div = annual_dividends['annual_dividend'].iloc[0]
+                last_div = annual_dividends['annual_dividend'].iloc[-1]
+                if first_div > 0:
+                    cagr = ((last_div / first_div) ** (1 / (len(annual_dividends) - 1)) - 1) * 100
             except:
                 cagr = 0
         
@@ -463,20 +506,17 @@ def analyze_ticker_quick(ticker, years=6):
 def create_weighted_portfolio_analysis(portfolio_results):
     """Crea un análisis ponderado de cartera combinando todas las posiciones"""
     
-    # Obtener todas las fechas únicas de todos los análisis
     all_dates = set()
     for r in portfolio_results:
         all_dates.update(r['analysis_df'].index)
     
     all_dates = sorted(list(all_dates))
     
-    # Crear DataFrame con fechas comunes
     portfolio_df = pd.DataFrame(index=all_dates)
     portfolio_df['weighted_price'] = 0.0
     portfolio_df['weighted_undervalued'] = 0.0
     portfolio_df['weighted_overvalued'] = 0.0
     
-    # Calcular valores ponderados para cada fecha
     for date in all_dates:
         total_weight_at_date = 0
         weighted_price = 0
@@ -484,11 +524,9 @@ def create_weighted_portfolio_analysis(portfolio_results):
         weighted_overvalued = 0
         
         for r in portfolio_results:
-            # Buscar la fecha más cercana en el análisis de esta acción
             if date in r['analysis_df'].index:
                 row = r['analysis_df'].loc[date]
             else:
-                # Si la fecha exacta no existe, usar la más cercana anterior
                 available_dates = r['analysis_df'].index[r['analysis_df'].index <= date]
                 if len(available_dates) > 0:
                     closest_date = available_dates[-1]
@@ -508,7 +546,6 @@ def create_weighted_portfolio_analysis(portfolio_results):
             portfolio_df.loc[date, 'weighted_undervalued'] = weighted_undervalued / total_weight_at_date
             portfolio_df.loc[date, 'weighted_overvalued'] = weighted_overvalued / total_weight_at_date
     
-    # Eliminar filas con valores cero
     portfolio_df = portfolio_df[(portfolio_df != 0).all(axis=1)]
     
     return portfolio_df
@@ -646,7 +683,6 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
     """Crea gráfico de Geraldine Weiss para cartera ponderada"""
     fig = go.Figure()
     
-    # Área de relleno entre bandas
     fig.add_trace(go.Scatter(
         x=portfolio_df.index,
         y=portfolio_df['weighted_overvalued'],
@@ -667,7 +703,6 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         hoverinfo='skip'
     ))
     
-    # Línea de sobrevaloración
     fig.add_trace(go.Scatter(
         x=portfolio_df.index,
         y=portfolio_df['weighted_overvalued'],
@@ -677,7 +712,6 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         hovertemplate='<b>Sobrevalorada:</b> $%{y:.2f}<extra></extra>'
     ))
     
-    # Línea de infravaloración
     fig.add_trace(go.Scatter(
         x=portfolio_df.index,
         y=portfolio_df['weighted_undervalued'],
@@ -687,7 +721,6 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         hovertemplate='<b>Infravalorada:</b> $%{y:.2f}<extra></extra>'
     ))
     
-    # Precio ponderado
     fig.add_trace(go.Scatter(
         x=portfolio_df.index,
         y=portfolio_df['weighted_price'],
@@ -697,7 +730,6 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         hovertemplate='<b>Precio:</b> $%{y:.2f}<extra></extra>'
     ))
     
-    # Marcador precio actual
     latest = portfolio_df.iloc[-1]
     fig.add_trace(go.Scatter(
         x=[portfolio_df.index[-1]],
@@ -708,7 +740,6 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         hovertemplate=f'<b>Actual: ${latest["weighted_price"]:.2f}</b><extra></extra>'
     ))
     
-    # Anotación precio actual
     fig.add_annotation(
         x=portfolio_df.index[-1],
         y=latest['weighted_price'],
@@ -942,13 +973,14 @@ def main():
                         
                         **Posibles causas:**
                         - El ticker no existe o está mal escrito
-                        - La acción no paga dividendos
+                        - La acción no paga dividendos o tiene historial muy limitado
                         - No hay suficiente historial de datos ({years} años)
                         
                         💡 **Sugerencias:**
                         - Verifica que el ticker sea correcto (ej: KO, JNJ, PG)
                         - Para acciones europeas usa el sufijo: IBE.MC, SAN.MC
                         - Reduce el período de análisis a 3 años
+                        - Asegúrate de que la empresa pague dividendos regularmente
                         """)
                     else:
                         st.markdown(
@@ -1292,7 +1324,6 @@ def main():
                         
                         st.divider()
                         
-                        # NEW: Weighted Portfolio Geraldine Weiss Chart
                         st.subheader("📈 Análisis Geraldine Weiss de Cartera Ponderada")
                         st.caption("Este gráfico muestra la valoración agregada de toda la cartera, ponderando cada posición según su peso")
                         
