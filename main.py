@@ -78,14 +78,6 @@ st.markdown("""
         color: #00ff88;
         text-decoration: none;
     }
-    
-    .comparison-card {
-        background-color: #1a1f2e;
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        margin: 10px 0;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -310,7 +302,6 @@ class GeraldineWeissAnalyzer:
         upper_sell_zone = overvalued - (range_size * 0.2)
         
         # Calcular score numérico (-100 a +100)
-        # -100 = muy sobrevalorada, +100 = muy infravalorada
         if range_size > 0:
             score = ((overvalued - price) / range_size) * 200 - 100
         else:
@@ -353,7 +344,7 @@ def analyze_ticker_quick(ticker, years=6):
         signal, description, score = analyzer.get_current_signal(analysis_df)
         latest = analysis_df.iloc[-1]
         
-        # Calcular CAGR si hay suficientes datos
+        # Calcular CAGR
         cagr = 0
         if len(annual_dividends) > 1:
             cagr = ((annual_dividends['annual_dividend'].iloc[-1] / 
@@ -373,8 +364,7 @@ def analyze_ticker_quick(ticker, years=6):
             'analysis_df': analysis_df,
             'dividend_data': dividend_data
         }
-    except Exception as e:
-        # En caso de error, retornar None
+    except Exception:
         return None
 
 
@@ -389,7 +379,6 @@ def plot_comparison_chart(results):
     
     x = list(range(len(tickers)))
     
-    # Bandas
     fig.add_trace(go.Scatter(
         x=x, y=overvalued,
         name='Sobrevalorada',
@@ -406,7 +395,6 @@ def plot_comparison_chart(results):
         marker=dict(size=10)
     ))
     
-    # Precio actual
     colors = []
     for r in results:
         if 'COMPRA' in r['signal']:
@@ -453,7 +441,7 @@ def plot_portfolio_composition(portfolio_data):
     """Gráfico de composición de cartera"""
     fig = go.Figure()
     
-    labels = [f"{row['ticker']}<br>{row['weight']}%" for _, row in portfolio_data.iterrows()]
+    labels = [f"{row['ticker']}<br>{row['weight']:.1f}%" for _, row in portfolio_data.iterrows()]
     values = portfolio_data['weight'].tolist()
     
     colors = ['#00ff88', '#00d4ff', '#7b2ff7', '#ffd93d', '#ff6b6b', 
@@ -465,7 +453,7 @@ def plot_portfolio_composition(portfolio_data):
         marker=dict(colors=colors[:len(labels)], line=dict(color='#1a1f2e', width=2)),
         textinfo='label+percent',
         textfont=dict(size=14),
-        hovertemplate='<b>%{label}</b><br>Peso: %{value}%<extra></extra>'
+        hovertemplate='<b>%{label}</b><br>Peso: %{value:.1f}%<extra></extra>'
     ))
     
     fig.update_layout(
@@ -508,8 +496,7 @@ def main():
                 "Período de Análisis (años)",
                 min_value=3,
                 max_value=10,
-                value=6,
-                help="Años de datos históricos a analizar"
+                value=6
             )
             
             st.divider()
@@ -560,7 +547,7 @@ def main():
                         st.error(f"""
                         ❌ **No se pudieron obtener datos suficientes para {ticker.upper()}**
                         
-                        Posibles causas:
+                        **Posibles causas:**
                         - El ticker no existe o está mal escrito
                         - La acción no paga dividendos
                         - No hay suficiente historial de datos ({years} años)
@@ -573,7 +560,6 @@ def main():
                         - Prueba con otra acción que pague dividendos regularmente
                         """)
                     else:
-                        # Mensaje de éxito
                         st.success(f"✅ Análisis completado para **{ticker.upper()}**")
                         
                         # Señal principal
@@ -593,30 +579,31 @@ def main():
                             unsafe_allow_html=True
                         )
                         
-                        # Métricas clave
+                        # Métricas
                         st.subheader("📊 Métricas Clave")
                         
                         col1, col2, col3, col4 = st.columns(4)
                         
-                        upside_to_undervalued = ((result['undervalued']/result['price'] - 1) * 100)
-                        upside_to_overvalued = ((result['overvalued']/result['price'] - 1) * 100)
+                        upside_undervalued = ((result['undervalued']/result['price'] - 1) * 100)
+                        upside_overvalued = ((result['overvalued']/result['price'] - 1) * 100)
                         
                         col1.metric("💵 Precio Actual", f"${result['price']:.2f}")
                         col2.metric("📊 Rentabilidad", f"{result['yield']:.2f}%")
                         col3.metric("🟢 Zona Infravalorada", f"${result['undervalued']:.2f}", 
-                                   delta=f"{upside_to_undervalued:.1f}%", delta_color="inverse")
+                                   delta=f"{upside_undervalued:.1f}%", delta_color="inverse")
                         col4.metric("🔴 Zona Sobrevalorada", f"${result['overvalued']:.2f}",
-                                   delta=f"{upside_to_overvalued:.1f}%")
+                                   delta=f"{upside_overvalued:.1f}%")
                         
-                        st.divider()
-                        
-                        # Mostrar análisis detallado (código existente)
-                        st.info("💡 Para análisis detallado completo, consulta la versión anterior del código")
+                        st.info("💡 **Nota:** Este es el análisis simplificado. Para visualizaciones completas, usa las pestañas de Comparación o Cartera.")
             else:
                 st.info("""
                 ### 👋 Bienvenido al Analizador Geraldine Weiss
                 
-                Introduce un ticker en la barra lateral para comenzar el análisis individual.
+                Introduce un ticker en la barra lateral y haz clic en **"Analizar Acción"** para comenzar.
+                
+                **Ejemplo de tickers:**
+                - **USA:** KO (Coca-Cola), JNJ (Johnson & Johnson), PG (Procter & Gamble)
+                - **Europa:** IBE.MC (Iberdrola), SAN.MC (Santander), TEF.MC (Telefónica)
                 """)
     
     # ==================== TAB 2: COMPARACIÓN MULTI-TICKER ====================
@@ -668,97 +655,78 @@ def main():
                         st.error("""
                         ❌ **No se pudieron obtener datos para ningún ticker**
                         
-                        Verifica que:
-                        - Los tickers sean correctos
-                        - Las acciones paguen dividendos
-                        - Haya suficiente historial
+                        Verifica que los tickers sean correctos y que las acciones paguen dividendos.
                         """)
                     else:
-                    st.success(f"✅ Análisis completado para {len(results)} acciones")
-                    
-                    # Gráfico comparativo
-                    st.plotly_chart(plot_comparison_chart(results), use_container_width=True)
-                    
-                    st.divider()
-                    
-                    # Tabla comparativa
-                    st.subheader("📋 Tabla Comparativa")
-                    
-                    comparison_df = pd.DataFrame([{
-                        'Ticker': r['ticker'],
-                        'Precio': f"${r['price']:.2f}",
-                        'Yield': f"{r['yield']:.2f}%",
-                        'Infravalorada': f"${r['undervalued']:.2f}",
-                        'Sobrevalorada': f"${r['overvalued']:.2f}",
-                        'Señal': r['signal'],
-                        'Score': f"{r['score']:.1f}",
-                        'CAGR Div.': f"{r['cagr']:.1f}%"
-                    } for r in results])
-                    
-                    # Ordenar por score (mejores oportunidades primero)
-                    comparison_df = comparison_df.sort_values('Score', ascending=False)
-                    
-                    st.dataframe(
-                        comparison_df,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
-                            "Señal": st.column_config.TextColumn("Señal", width="medium"),
-                            "Score": st.column_config.TextColumn("Score", width="small", help="Score: +100=muy infravalorada, -100=muy sobrevalorada")
-                        }
-                    )
-                    
-                    # Ranking de oportunidades
-                    st.divider()
-                    st.subheader("🏆 Ranking de Oportunidades")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    # Top compra
-                    buy_opportunities = [r for r in results if 'COMPRA' in r['signal']]
-                    buy_opportunities.sort(key=lambda x: x['score'], reverse=True)
-                    
-                    with col1:
-                        st.success("**🟢 Mejores Oportunidades de Compra**")
-                        if buy_opportunities:
-                            for r in buy_opportunities[:3]:
-                                st.markdown(f"**{r['ticker']}** - {r['signal']}")
-                                st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
-                        else:
-                            st.caption("No hay señales de compra")
-                    
-                    # Mantener
-                    hold_opportunities = [r for r in results if r['signal'] == 'MANTENER']
-                    
-                    with col2:
-                        st.info("**🟡 Mantener Posición**")
-                        if hold_opportunities:
-                            for r in hold_opportunities[:3]:
-                                st.markdown(f"**{r['ticker']}** - {r['signal']}")
-                                st.caption(f"Yield: {r['yield']:.2f}%")
-                        else:
-                            st.caption("No hay señales de mantener")
-                    
-                    # Top venta
-                    sell_opportunities = [r for r in results if 'VENTA' in r['signal']]
-                    sell_opportunities.sort(key=lambda x: x['score'])
-                    
-                    with col3:
-                        st.warning("**🔴 Considerar Venta**")
-                        if sell_opportunities:
-                            for r in sell_opportunities[:3]:
-                                st.markdown(f"**{r['ticker']}** - {r['signal']}")
-                                st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
-                        else:
-                            st.caption("No hay señales de venta")
+                        st.success(f"✅ Análisis completado para {len(results)} acciones")
+                        
+                        # Gráfico comparativo
+                        st.plotly_chart(plot_comparison_chart(results), use_container_width=True)
+                        
+                        st.divider()
+                        
+                        # Tabla comparativa
+                        st.subheader("📋 Tabla Comparativa")
+                        
+                        comparison_df = pd.DataFrame([{
+                            'Ticker': r['ticker'],
+                            'Precio': f"${r['price']:.2f}",
+                            'Yield': f"{r['yield']:.2f}%",
+                            'Infravalorada': f"${r['undervalued']:.2f}",
+                            'Sobrevalorada': f"${r['overvalued']:.2f}",
+                            'Señal': r['signal'],
+                            'Score': f"{r['score']:.1f}",
+                            'CAGR Div.': f"{r['cagr']:.1f}%"
+                        } for r in results])
+                        
+                        comparison_df = comparison_df.sort_values('Score', ascending=False)
+                        
+                        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+                        
+                        # Ranking
+                        st.divider()
+                        st.subheader("🏆 Ranking de Oportunidades")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        buy_opps = sorted([r for r in results if 'COMPRA' in r['signal']], 
+                                        key=lambda x: x['score'], reverse=True)
+                        hold_opps = [r for r in results if r['signal'] == 'MANTENER']
+                        sell_opps = sorted([r for r in results if 'VENTA' in r['signal']], 
+                                         key=lambda x: x['score'])
+                        
+                        with col1:
+                            st.success("**🟢 Mejores Oportunidades de Compra**")
+                            if buy_opps:
+                                for r in buy_opps[:3]:
+                                    st.markdown(f"**{r['ticker']}** - {r['signal']}")
+                                    st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
+                            else:
+                                st.caption("No hay señales de compra")
+                        
+                        with col2:
+                            st.info("**🟡 Mantener Posición**")
+                            if hold_opps:
+                                for r in hold_opps[:3]:
+                                    st.markdown(f"**{r['ticker']}** - {r['signal']}")
+                                    st.caption(f"Yield: {r['yield']:.2f}%")
+                            else:
+                                st.caption("No hay señales de mantener")
+                        
+                        with col3:
+                            st.warning("**🔴 Considerar Venta**")
+                            if sell_opps:
+                                for r in sell_opps[:3]:
+                                    st.markdown(f"**{r['ticker']}** - {r['signal']}")
+                                    st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
+                            else:
+                                st.caption("No hay señales de venta")
     
     # ==================== TAB 3: CARTERA PONDERADA ====================
     with main_tab3:
         st.header("💼 Análisis de Cartera Ponderada")
         st.caption("Aplica el método Geraldine Weiss a tu cartera completa")
         
-        # Inicializar session state para la cartera
         if 'portfolio' not in st.session_state:
             st.session_state.portfolio = pd.DataFrame(columns=['ticker', 'weight'])
         
@@ -772,14 +740,16 @@ def main():
             with col_a:
                 new_ticker = st.text_input("Ticker", key="portfolio_ticker")
             with col_b:
-                new_weight = st.number_input("Peso (%)", min_value=0.0, max_value=100.0, value=10.0, step=5.0, key="portfolio_weight")
+                new_weight = st.number_input("Peso (%)", min_value=0.0, max_value=100.0, 
+                                            value=10.0, step=5.0, key="portfolio_weight")
             with col_c:
                 st.write("")
                 st.write("")
                 if st.button("➕ Añadir", type="secondary", use_container_width=True):
                     if new_ticker:
                         new_row = pd.DataFrame([{'ticker': new_ticker.upper(), 'weight': new_weight}])
-                        st.session_state.portfolio = pd.concat([st.session_state.portfolio, new_row], ignore_index=True)
+                        st.session_state.portfolio = pd.concat([st.session_state.portfolio, new_row], 
+                                                              ignore_index=True)
                         st.rerun()
         
         with col2:
@@ -799,39 +769,29 @@ def main():
         
         st.divider()
         
-        # Mostrar cartera actual
         if not st.session_state.portfolio.empty:
             st.subheader("📊 Cartera Actual")
             
-            # Normalizar pesos
             total_weight = st.session_state.portfolio['weight'].sum()
             if total_weight != 100:
                 st.warning(f"⚠️ Los pesos suman {total_weight:.1f}%. Se normalizarán a 100%.")
             
-            # Mostrar tabla editable
             edited_df = st.data_editor(
                 st.session_state.portfolio,
                 use_container_width=True,
                 hide_index=True,
-                num_rows="dynamic",
-                column_config={
-                    "ticker": st.column_config.TextColumn("Ticker", width="medium"),
-                    "weight": st.column_config.NumberColumn("Peso (%)", width="small", min_value=0, max_value=100)
-                }
+                num_rows="dynamic"
             )
             
             st.session_state.portfolio = edited_df
             
             st.divider()
             
-            # Botón de análisis
             if st.button("🔍 Analizar Cartera Completa", type="primary", use_container_width=True):
                 with st.spinner('🔄 Analizando cartera...'):
-                    # Normalizar pesos
                     portfolio_data = st.session_state.portfolio.copy()
                     portfolio_data['weight'] = (portfolio_data['weight'] / portfolio_data['weight'].sum()) * 100
                     
-                    # Analizar cada ticker
                     portfolio_results = []
                     failed_tickers = []
                     progress_bar = st.progress(0)
@@ -851,23 +811,15 @@ def main():
                         st.warning(f"⚠️ No se pudieron analizar: {', '.join(failed_tickers)}")
                     
                     if not portfolio_results:
-                        st.error("""
-                        ❌ **No se pudieron obtener datos para ningún ticker de la cartera**
-                        
-                        Verifica que:
-                        - Los tickers sean correctos
-                        - Las acciones paguen dividendos
-                        - Haya conexión a internet
-                        """)
+                        st.error("❌ No se pudieron obtener datos para ningún ticker de la cartera")
                     else:
                         st.success(f"✅ Cartera analizada: {len(portfolio_results)} posiciones")
                         
-                        # Calcular métricas de cartera ponderada
+                        # Métricas ponderadas
                         total_yield = sum(r['yield'] * r['portfolio_weight'] / 100 for r in portfolio_results)
                         total_cagr = sum(r['cagr'] * r['portfolio_weight'] / 100 for r in portfolio_results)
                         avg_score = sum(r['score'] * r['portfolio_weight'] / 100 for r in portfolio_results)
                         
-                        # Determinar señal de cartera
                         if avg_score > 30:
                             portfolio_signal = "COMPRA"
                             signal_color = "#00ff88"
@@ -878,7 +830,6 @@ def main():
                             portfolio_signal = "MANTENER"
                             signal_color = "#ffd93d"
                         
-                        # Banner de señal de cartera
                         st.markdown(
                             f"""<div class='big-signal' style='border-color: {signal_color}; color: {signal_color}; font-size: 36px;'>
                             Señal de Cartera: {portfolio_signal}<br>
@@ -887,7 +838,6 @@ def main():
                             unsafe_allow_html=True
                         )
                         
-                        # Métricas de cartera
                         st.subheader("📊 Métricas de Cartera Ponderada")
                         
                         col1, col2, col3, col4 = st.columns(4)
@@ -899,14 +849,11 @@ def main():
                         
                         st.divider()
                         
-                        # Composición
                         col1, col2 = st.columns([1, 1])
                         
                         with col1:
-                            st.plotly_chart(
-                                plot_portfolio_composition(portfolio_data),
-                                use_container_width=True
-                            )
+                            st.plotly_chart(plot_portfolio_composition(portfolio_data), 
+                                          use_container_width=True)
                         
                         with col2:
                             st.subheader("📋 Detalle de Posiciones")
@@ -919,26 +866,21 @@ def main():
                                 'Score': f"{r['score']:.1f}"
                             } for r in portfolio_results])
                             
-                            st.dataframe(
-                                portfolio_detail,
-                                use_container_width=True,
-                                hide_index=True
-                            )
+                            st.dataframe(portfolio_detail, use_container_width=True, hide_index=True)
                         
                         st.divider()
                         
-                        # Recomendaciones
                         st.subheader("💡 Recomendaciones de Rebalanceo")
                         
-                        buy_positions = [r for r in portfolio_results if 'COMPRA' in r['signal']]
-                        sell_positions = [r for r in portfolio_results if 'VENTA' in r['signal']]
+                        buy_pos = [r for r in portfolio_results if 'COMPRA' in r['signal']]
+                        sell_pos = [r for r in portfolio_results if 'VENTA' in r['signal']]
                         
                         col1, col2 = st.columns(2)
                         
                         with col1:
                             st.success("**🟢 Considerar Aumentar Posición**")
-                            if buy_positions:
-                                for r in buy_positions:
+                            if buy_pos:
+                                for r in buy_pos:
                                     st.markdown(f"**{r['ticker']}** ({r['portfolio_weight']:.1f}%) - {r['signal']}")
                                     st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
                             else:
@@ -946,13 +888,12 @@ def main():
                         
                         with col2:
                             st.warning("**🔴 Considerar Reducir Posición**")
-                            if sell_positions:
-                                for r in sell_positions:
+                            if sell_pos:
+                                for r in sell_pos:
                                     st.markdown(f"**{r['ticker']}** ({r['portfolio_weight']:.1f}%) - {r['signal']}")
                                     st.caption(f"Yield: {r['yield']:.2f}% | Score: {r['score']:.1f}")
                             else:
                                 st.caption("No hay posiciones en zona de venta")
-        
         else:
             st.info("""
             ### 📝 Instrucciones
