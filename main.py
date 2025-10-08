@@ -206,18 +206,13 @@ class GeraldineWeissAnalyzer:
         self.data_source = None
         
     def fetch_price_data(self):
-        """
-        Obtiene datos históricos de precios sin caché usando Ticker().history()
-        Esto evita problemas de caché de yf.download()
-        """
+        """Obtiene datos históricos de precios"""
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
         try:
-            # Usar Ticker().history() para evitar caché y obtener datos frescos
             ticker_obj = yf.Ticker(self.ticker)
             
-            # history() sin auto_adjust para precios originales en moneda local
             data = ticker_obj.history(
                 start=start_date,
                 end=end_date,
@@ -232,6 +227,10 @@ class GeraldineWeissAnalyzer:
                 data.columns = data.columns.get_level_values(0)
             
             data.index = pd.to_datetime(data.index)
+            
+            # Asegurar que el índice no tiene timezone
+            if data.index.tz is not None:
+                data.index = data.index.tz_localize(None)
             
             return data
             
@@ -275,11 +274,9 @@ class GeraldineWeissAnalyzer:
         try:
             ticker_obj = yf.Ticker(self.ticker)
             
-            # Intentar con dividends
             divs = ticker_obj.dividends
             
             if divs.empty:
-                # Intentar con actions
                 try:
                     actions = ticker_obj.actions
                     if 'Dividends' in actions.columns:
@@ -289,7 +286,6 @@ class GeraldineWeissAnalyzer:
                     pass
             
             if not divs.empty:
-                # Manejo de timezone
                 if divs.index.tz is not None:
                     if start_date.tzinfo is None:
                         start_date = pytz.UTC.localize(start_date)
@@ -321,7 +317,6 @@ class GeraldineWeissAnalyzer:
         dividend_df = dividend_df.copy()
         dividend_df['year'] = dividend_df['ex_dividend_date'].dt.year
         
-        # Filtrar outliers usando desviación estándar
         mean_div = dividend_df['amount'].mean()
         std_div = dividend_df['amount'].std()
         if std_div > 0:
@@ -332,7 +327,6 @@ class GeraldineWeissAnalyzer:
         annual = dividend_df.groupby('year')['amount'].sum().reset_index()
         annual.columns = ['year', 'annual_dividend']
         
-        # Filtrar años con dividendos anormalmente bajos
         if len(annual) > 0:
             median_div = annual['annual_dividend'].median()
             annual = annual[annual['annual_dividend'] > median_div * 0.1]
@@ -358,7 +352,6 @@ class GeraldineWeissAnalyzer:
         
         merged['div_yield'] = merged['annual_dividend'] / merged['Close']
         
-        # Filtrar yields extremos
         yield_median = merged['div_yield'].median()
         yield_std = merged['div_yield'].std()
         if yield_std > 0:
@@ -369,7 +362,6 @@ class GeraldineWeissAnalyzer:
         if merged.empty:
             return None
         
-        # Usar percentiles en vez de min/max para evitar outliers
         max_yield = merged['div_yield'].quantile(0.95)
         min_yield = merged['div_yield'].quantile(0.05)
         
@@ -526,6 +518,10 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
     """Gráfico de valoración Geraldine Weiss individual"""
     fig = go.Figure()
     
+    # Asegurar que el índice es datetime sin timezone
+    if analysis_df.index.tz is not None:
+        analysis_df.index = analysis_df.index.tz_localize(None)
+    
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
         y=analysis_df['overvalued'],
@@ -552,7 +548,7 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         name='Sobrevalorada',
         line=dict(color='#ff6b6b', width=3),
         mode='lines',
-        hovertemplate='<b>Sobrevalorada:</b> %{y:.2f}<extra></extra>'
+        hovertemplate='<b>Sobrevalorada:</b> %{y:.2f}<br>%{x|%d %b %Y}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -561,7 +557,7 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         name='Infravalorada',
         line=dict(color='#00ff88', width=3),
         mode='lines',
-        hovertemplate='<b>Infravalorada:</b> %{y:.2f}<extra></extra>'
+        hovertemplate='<b>Infravalorada:</b> %{y:.2f}<br>%{x|%d %b %Y}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -570,7 +566,7 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
         name='Precio Actual',
         line=dict(color='#00d4ff', width=4),
         mode='lines',
-        hovertemplate='<b>Precio:</b> %{y:.2f}<extra></extra>'
+        hovertemplate='<b>Precio:</b> %{y:.2f}<br>%{x|%d %b %Y}<extra></extra>'
     ))
     
     latest = analysis_df.iloc[-1]
@@ -608,13 +604,11 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
             xanchor='center'
         ),
         xaxis=dict(
-            title='',
+            title='Fecha',
             gridcolor='rgba(255, 255, 255, 0.1)',
             showgrid=True,
             zeroline=False,
-            type='date',  # ✅ AÑADIDO
-            tickformat='%b %Y',  # ✅ AÑADIDO - Formato: Ene 2024
-            dtick='M6'  # ✅ AÑADIDO - Tick cada 6 meses
+            tickformat='%b %Y'
         ),
         yaxis=dict(
             title='Precio',
@@ -646,6 +640,10 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
     """Gráfico de valoración de cartera ponderada"""
     fig = go.Figure()
     
+    # Asegurar que el índice es datetime sin timezone
+    if portfolio_df.index.tz is not None:
+        portfolio_df.index = portfolio_df.index.tz_localize(None)
+    
     fig.add_trace(go.Scatter(
         x=portfolio_df.index,
         y=portfolio_df['weighted_overvalued'],
@@ -672,7 +670,7 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         name='Sobrevalorada',
         line=dict(color='#ff6b6b', width=3),
         mode='lines',
-        hovertemplate='<b>Sobrevalorada:</b> %{y:.2f}<extra></extra>'
+        hovertemplate='<b>Sobrevalorada:</b> %{y:.2f}<br>%{x|%d %b %Y}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -681,7 +679,7 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         name='Infravalorada',
         line=dict(color='#00ff88', width=3),
         mode='lines',
-        hovertemplate='<b>Infravalorada:</b> %{y:.2f}<extra></extra>'
+        hovertemplate='<b>Infravalorada:</b> %{y:.2f}<br>%{x|%d %b %Y}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -690,7 +688,7 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
         name='Precio Ponderado',
         line=dict(color='#00d4ff', width=4),
         mode='lines',
-        hovertemplate='<b>Precio:</b> %{y:.2f}<extra></extra>'
+        hovertemplate='<b>Precio:</b> %{y:.2f}<br>%{x|%d %b %Y}<extra></extra>'
     ))
     
     latest = portfolio_df.iloc[-1]
@@ -728,13 +726,11 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
             xanchor='center'
         ),
         xaxis=dict(
-            title='',
+            title='Fecha',
             gridcolor='rgba(255, 255, 255, 0.1)',
             showgrid=True,
             zeroline=False,
-            type='date',  # ✅ AÑADIDO
-            tickformat='%b %Y',  # ✅ AÑADIDO - Formato: Ene 2024
-            dtick='M6'  # ✅ AÑADIDO - Tick cada 6 meses
+            tickformat='%b %Y'
         ),
         yaxis=dict(
             title='Valor Ponderado',
