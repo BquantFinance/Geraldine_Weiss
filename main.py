@@ -229,7 +229,7 @@ class GeraldineWeissAnalyzer:
             data.index = pd.to_datetime(data.index)
             
             # Asegurar que el índice no tiene timezone
-            if data.index.tz is not None:
+            if isinstance(data.index, pd.DatetimeIndex) and data.index.tz is not None:
                 data.index = data.index.tz_localize(None)
             
             return data
@@ -336,6 +336,10 @@ class GeraldineWeissAnalyzer:
     def calculate_valuation_bands(self, prices, annual_dividends):
         """Calcula bandas de valoración según método Geraldine Weiss"""
         prices = prices.copy()
+        
+        # Asegurar que el índice no tiene timezone
+        if isinstance(prices.index, pd.DatetimeIndex) and prices.index.tz is not None:
+            prices.index = prices.index.tz_localize(None)
         
         if 'Close' not in prices.columns:
             if 'close' in prices.columns:
@@ -516,12 +520,14 @@ def get_data_source_badge(source):
 
 def plot_geraldine_weiss_individual(analysis_df, ticker):
     """Gráfico de valoración Geraldine Weiss individual"""
-    fig = go.Figure()
+    # Hacer una copia para no modificar el original
+    analysis_df = analysis_df.copy()
     
     # Asegurar que el índice es datetime sin timezone
-    if isinstance(analysis_df.index, pd.DatetimeIndex):
-        if analysis_df.index.tz is not None:
-            analysis_df.index = analysis_df.index.tz_localize(None)
+    if isinstance(analysis_df.index, pd.DatetimeIndex) and analysis_df.index.tz is not None:
+        analysis_df.index = analysis_df.index.tz_localize(None)
+    
+    fig = go.Figure()
     
     fig.add_trace(go.Scatter(
         x=analysis_df.index,
@@ -639,12 +645,14 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
 
 def plot_portfolio_geraldine_weiss(portfolio_df):
     """Gráfico de valoración de cartera ponderada"""
-    fig = go.Figure()
+    # Hacer una copia para no modificar el original
+    portfolio_df = portfolio_df.copy()
     
     # Asegurar que el índice es datetime sin timezone
-    if isinstance(portfolio_df.index, pd.DatetimeIndex):
-        if portfolio_df.index.tz is not None:
-            portfolio_df.index = portfolio_df.index.tz_localize(None)
+    if isinstance(portfolio_df.index, pd.DatetimeIndex) and portfolio_df.index.tz is not None:
+        portfolio_df.index = portfolio_df.index.tz_localize(None)
+    
+    fig = go.Figure()
     
     fig.add_trace(go.Scatter(
         x=portfolio_df.index,
@@ -758,6 +766,7 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
     )
     
     return fig
+
 
 def plot_comparison_chart(results):
     """Gráfico comparativo de múltiples tickers"""
@@ -825,128 +834,6 @@ def plot_comparison_chart(results):
     )
     
     return fig
-    
-def plot_portfolio_geraldine_weiss(portfolio_df):
-    """Gráfico de valoración de cartera ponderada"""
-    fig = go.Figure()
-    
-    # Asegurar que el índice es datetime sin timezone
-    if portfolio_df.index.tz is not None:
-        portfolio_df.index = portfolio_df.index.tz_localize(None)
-    
-    fig.add_trace(go.Scatter(
-        x=portfolio_df.index,
-        y=portfolio_df['weighted_overvalued'],
-        name='Zona Sobrevalorada',
-        line=dict(color='rgba(255, 107, 107, 0)', width=0),
-        showlegend=False,
-        hoverinfo='skip'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=portfolio_df.index,
-        y=portfolio_df['weighted_undervalued'],
-        name='Rango de Valor Razonable',
-        fill='tonexty',
-        fillcolor='rgba(0, 255, 136, 0.1)',
-        line=dict(color='rgba(0, 255, 136, 0)', width=0),
-        showlegend=True,
-        hoverinfo='skip'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=portfolio_df.index,
-        y=portfolio_df['weighted_overvalued'],
-        name='Sobrevalorada',
-        line=dict(color='#ff6b6b', width=3),
-        mode='lines',
-        hovertemplate='<b>Sobrevalorada:</b> %{y:.2f}<br>%{x|%d %b %Y}<extra></extra>'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=portfolio_df.index,
-        y=portfolio_df['weighted_undervalued'],
-        name='Infravalorada',
-        line=dict(color='#00ff88', width=3),
-        mode='lines',
-        hovertemplate='<b>Infravalorada:</b> %{y:.2f}<br>%{x|%d %b %Y}<extra></extra>'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=portfolio_df.index,
-        y=portfolio_df['weighted_price'],
-        name='Precio Ponderado',
-        line=dict(color='#00d4ff', width=4),
-        mode='lines',
-        hovertemplate='<b>Precio:</b> %{y:.2f}<br>%{x|%d %b %Y}<extra></extra>'
-    ))
-    
-    latest = portfolio_df.iloc[-1]
-    fig.add_trace(go.Scatter(
-        x=[portfolio_df.index[-1]],
-        y=[latest['weighted_price']],
-        mode='markers',
-        marker=dict(size=16, color='#00d4ff', line=dict(color='white', width=3)),
-        showlegend=False,
-        hovertemplate=f'<b>Actual: {latest["weighted_price"]:.2f}</b><extra></extra>'
-    ))
-    
-    fig.add_annotation(
-        x=portfolio_df.index[-1],
-        y=latest['weighted_price'],
-        text=f"{latest['weighted_price']:.2f}",
-        showarrow=True,
-        arrowhead=2,
-        arrowsize=1,
-        arrowwidth=2,
-        arrowcolor="#00d4ff",
-        ax=40,
-        ay=-40,
-        bgcolor="rgba(0, 212, 255, 0.2)",
-        bordercolor="#00d4ff",
-        borderwidth=2,
-        font=dict(size=14, color="white")
-    )
-    
-    fig.update_layout(
-        title=dict(
-            text='<b>Cartera Ponderada</b> - Análisis Geraldine Weiss',
-            font=dict(size=24, color='white'),
-            x=0.5,
-            xanchor='center'
-        ),
-        xaxis=dict(
-            title='Fecha',
-            gridcolor='rgba(255, 255, 255, 0.1)',
-            showgrid=True,
-            zeroline=False,
-            tickformat='%b %Y'
-        ),
-        yaxis=dict(
-            title='Valor Ponderado',
-            gridcolor='rgba(255, 255, 255, 0.1)',
-            showgrid=True,
-            zeroline=False
-        ),
-        template='plotly_dark',
-        hovermode='x unified',
-        height=550,
-        plot_bgcolor='#0e1117',
-        paper_bgcolor='#0e1117',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor='rgba(30, 40, 57, 0.8)',
-            bordercolor='rgba(255, 255, 255, 0.2)',
-            borderwidth=1
-        )
-    )
-    
-    return fig
-
 
 
 def plot_portfolio_composition(portfolio_data):
