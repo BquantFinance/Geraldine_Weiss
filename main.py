@@ -611,7 +611,10 @@ def plot_geraldine_weiss_individual(analysis_df, ticker):
             title='',
             gridcolor='rgba(255, 255, 255, 0.1)',
             showgrid=True,
-            zeroline=False
+            zeroline=False,
+            type='date',  # ✅ AÑADIDO
+            tickformat='%b %Y',  # ✅ AÑADIDO - Formato: Ene 2024
+            dtick='M6'  # ✅ AÑADIDO - Tick cada 6 meses
         ),
         yaxis=dict(
             title='Precio',
@@ -728,7 +731,10 @@ def plot_portfolio_geraldine_weiss(portfolio_df):
             title='',
             gridcolor='rgba(255, 255, 255, 0.1)',
             showgrid=True,
-            zeroline=False
+            zeroline=False,
+            type='date',  # ✅ AÑADIDO
+            tickformat='%b %Y',  # ✅ AÑADIDO - Formato: Ene 2024
+            dtick='M6'  # ✅ AÑADIDO - Tick cada 6 meses
         ),
         yaxis=dict(
             title='Valor Ponderado',
