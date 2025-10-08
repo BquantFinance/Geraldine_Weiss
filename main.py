@@ -239,18 +239,14 @@ class GeraldineWeissAnalyzer:
             return None
     
     def fetch_dividend_data(self):
-        """Obtiene datos de dividendos priorizando yfinance"""
+        """Obtiene datos de dividendos priorizando dividendhistory.org para tickers USA"""
         end_date = datetime.now()
         start_date = end_date - relativedelta(years=self.years)
         
-        # Primero intentar con yfinance (más confiable)
-        df = self._fetch_from_yfinance(start_date)
-        if not df.empty:
-            self.data_source = "yfinance"
-            return df
-        
-        # Si falla yfinance y es ticker US (sin sufijo), intentar dividendhistory
+        # Detectar si es ticker USA (sin sufijo)
         has_suffix = '.' in self.ticker
+        
+        # Para tickers USA, priorizar dividendhistory.org
         if not has_suffix:
             try:
                 df = self.dividend_fetcher.fetch_dividends(
@@ -264,6 +260,12 @@ class GeraldineWeissAnalyzer:
                     return df
             except Exception:
                 pass
+        
+        # Si es internacional o falló dividendhistory, usar yfinance
+        df = self._fetch_from_yfinance(start_date)
+        if not df.empty:
+            self.data_source = "yfinance"
+            return df
         
         self.data_source = "none"
         return pd.DataFrame()
