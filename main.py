@@ -703,166 +703,358 @@ class GeraldineWeissAnalyzer:
         sh=inv/price
         return [{'year':y,'income':sh*ttm*((1+cagr/100)**y),'yoc':(ttm*((1+cagr/100)**y)/price)*100} for y in range(yrs+1)]
 
+    # ── NEW: Dividend Safety Score ──
+    def dividend_safety_score(self, ticker_str):
+        """Evalúa seguridad del dividendo: payout ratio, deuda, FCF coverage"""
+        try:
+            info = yf.Ticker(ticker_str).info
+            payout = info.get('payoutRatio', None)
+            de = info.get('debtToEquity', None)
+            fcf = info.get('freeCashflow', None)
+            div_rate = info.get('dividendRate', None)
+            shares = info.get('sharesOutstanding', None)
+            mkt_cap = info.get('marketCap', None)
 
-@st.cache_data(ttl=3600,show_spinner=False)
-def analyze(ticker,years=6):
+            score = 0
+            details = {}
+
+            # Payout Ratio (max 35 pts) — lower is safer
+            if payout is not None:
+                payout_pct = payout * 100
+                details['payout_ratio'] = payout_pct
+                if payout_pct < 30:
+                    score += 35
+                elif payout_pct < 50:
+                    score += 30
+                elif payout_pct < 65:
+                    score += 20
+                elif payout_pct < 80:
+                    score += 10
+                else:
+                    score += 0
+            else:
+                details['payout_ratio'] = None
+
+            # Debt/Equity (max 30 pts) — lower is safer
+            if de is not None:
+                details['debt_equity'] = de
+                if de < 50:
+                    score += 30
+                elif de < 100:
+                    score += 22
+                elif de < 150:
+                    score += 15
+                elif de < 250:
+                    score += 8
+                else:
+                    score += 0
+            else:
+                details['debt_equity'] = None
+
+            # FCF Coverage (max 35 pts)
+            if fcf is not None and div_rate is not None and shares is not None and shares > 0 and div_rate > 0:
+                total_div = div_rate * shares
+                fcf_cover = fcf / total_div if total_div > 0 else 0
+                details['fcf_coverage'] = fcf_cover
+                if fcf_cover > 3:
+                    score += 35
+                elif fcf_cover > 2:
+                    score += 28
+                elif fcf_cover > 1.5:
+                    score += 20
+                elif fcf_cover > 1:
+                    score += 10
+                else:
+                    score += 0
+            else:
+                details['fcf_coverage'] = None
+
+            grade = 'A' if score >= 80 else 'B' if score >= 60 else 'C' if score >= 40 else 'D' if score >= 20 else 'F'
+            return {'score': score, 'grade': grade, 'details': details}
+        except:
+            return {'score': 0, 'grade': '?', 'details': {'payout_ratio': None, 'debt_equity': None, 'fcf_coverage': None}}
+
+
+# ═══════════════════════════════════
+# DIVIDEND ARISTOCRATS LIST
+# ═══════════════════════════════════
+
+ARISTOCRATS = [
+    "ABBV","ABT","ADM","ADP","AFL","ALB","AMCR","AOS","APD","ATT",
+    "BDX","BEN","BRO","CAH","CAT","CB","CHD","CHRW","CINF","CL",
+    "CLX","CTAS","CVX","DOV","ECL","ED","EMR","ESS","EXPD","FRT",
+    "GD","GPC","GWW","HRL","IBM","ITW","JNJ","KMB","KO","LEG",
+    "LIN","LOW","MCD","MDT","MKC","MMM","NDSN","NEE","NUE","O",
+    "PEP","PG","PNR","PPG","ROP","SEIC","SHW","SJM","SPGI","SWK",
+    "SYY","T","TGT","TROW","VFC","WBA","WMT","WST","XOM"
+]
+
+EURO_DIVIDENDS = [
+    "IBE.MC","SAN.MC","TEF.MC","BBVA.MC","REP.MC","ACS.MC",
+    "ALV.DE","BAS.DE","DTE.DE","SIE.DE",
+    "SAN.PA","BNP.PA","AI.PA","TTE.PA",
+    "ENEL.MI","ISP.MI","ENI.MI"
+]
+
+
+# ═══════════════════════════════════
+# CACHED ANALYSIS (enhanced)
+# ═══════════════════════════════════
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def analyze(ticker, years=6):
     try:
-        a=GeraldineWeissAnalyzer(ticker,years); pd_=a.fetch_price_data()
-        if pd_ is None or pd_.empty: return None
-        dd=a.fetch_dividend_data()
-        if dd.empty: return None
-        pttm=a.calculate_ttm_dividends(pd_,dd)
-        if pttm is None: return None
-        adf=a.calculate_valuation_bands(pttm)
-        if adf is None or adf.empty: return None
-        sig,desc,sc=a.get_current_signal(adf); lat=adf.iloc[-1]
-        ds=dd.copy().sort_values('ex_dividend_date'); ds['year']=ds['ex_dividend_date'].dt.year
-        ann=ds.groupby('year')['amount'].sum().sort_index()
-        cagr=((ann.iloc[-1]/ann.iloc[0])**(1/(len(ann)-1))-1)*100 if len(ann)>1 and ann.iloc[0]>0 else 0
-        q=a.calculate_quality_score(dd); cl,clb=a.calculate_confidence(dd,adf)
-        return {'ticker':ticker,'price':lat['Close'],'yield':lat['div_yield']*100,'ttm_dividend':lat['ttm_dividend'],
-            'undervalued':lat['undervalued'],'overvalued':lat['overvalued'],'signal':sig,'desc':desc,'score':sc,'cagr':cagr,
-            'adf':adf,'dd':dd,'src':a.data_source,'quality':q,'conf':cl,'conf_label':clb,
-            'bt':a.backtest_signals(adf),'proj':a.project_dividend_income(lat['ttm_dividend'],cagr,lat['Close'])}
-    except: return None
+        a = GeraldineWeissAnalyzer(ticker, years)
+        pd_ = a.fetch_price_data()
+        if pd_ is None or pd_.empty:
+            return None
+        dd = a.fetch_dividend_data()
+        if dd.empty:
+            return None
+        pttm = a.calculate_ttm_dividends(pd_, dd)
+        if pttm is None:
+            return None
+        adf = a.calculate_valuation_bands(pttm)
+        if adf is None or adf.empty:
+            return None
+        sig, desc, sc = a.get_current_signal(adf)
+        lat = adf.iloc[-1]
+        ds = dd.copy().sort_values('ex_dividend_date')
+        ds['year'] = ds['ex_dividend_date'].dt.year
+        ann = ds.groupby('year')['amount'].sum().sort_index()
+        cagr = ((ann.iloc[-1] / ann.iloc[0]) ** (1 / (len(ann) - 1)) - 1) * 100 if len(ann) > 1 and ann.iloc[0] > 0 else 0
+        q = a.calculate_quality_score(dd)
+        cl, clb = a.calculate_confidence(dd, adf)
+        bt = a.backtest_signals(adf)
 
+        # Buy & Hold return for comparison
+        bh_ret = 0
+        if len(adf) > 1:
+            bh_ret = (adf.iloc[-1]['Close'] / adf.iloc[0]['Close'] - 1) * 100
+
+        # Dividend Safety Score
+        safety = a.dividend_safety_score(ticker)
+
+        return {
+            'ticker': ticker, 'price': lat['Close'],
+            'yield': lat['div_yield'] * 100, 'ttm_dividend': lat['ttm_dividend'],
+            'undervalued': lat['undervalued'], 'overvalued': lat['overvalued'],
+            'signal': sig, 'desc': desc, 'score': sc, 'cagr': cagr,
+            'adf': adf, 'dd': dd, 'src': a.data_source,
+            'quality': q, 'conf': cl, 'conf_label': clb,
+            'bt': bt, 'bh_ret': bh_ret, 'safety': safety,
+            'proj': a.project_dividend_income(lat['ttm_dividend'], cagr, lat['Close'])
+        }
+    except:
+        return None
+
+
+# ═══════════════════════════════════
+# PORTFOLIO + WATCHLIST
+# ═══════════════════════════════════
 
 def portfolio_analysis(pr):
-    dates=sorted(set(d for r in pr for d in r['adf'].index.tolist()))
-    pdf=pd.DataFrame(index=pd.DatetimeIndex(dates)); pdf['wp']=0.0; pdf['wu']=0.0; pdf['wo']=0.0
+    dates = sorted(set(d for r in pr for d in r['adf'].index.tolist()))
+    pdf = pd.DataFrame(index=pd.DatetimeIndex(dates))
+    pdf['wp'] = 0.0; pdf['wu'] = 0.0; pdf['wo'] = 0.0
     for d in dates:
-        tw,wp,wu,wo=0,0,0,0
+        tw, wp, wu, wo = 0, 0, 0, 0
         for r in pr:
-            df=r['adf']
-            if d in df.index: row=df.loc[d]
+            df = r['adf']
+            if d in df.index:
+                row = df.loc[d]
             else:
-                av=df.index[df.index<=d]
-                if len(av)>0: row=df.loc[av[-1]]
-                else: continue
-            if isinstance(row,pd.DataFrame): row=row.iloc[-1]
-            w=r['pw']/100; tw+=w; wp+=row['Close']*w; wu+=row['undervalued']*w; wo+=row['overvalued']*w
-        if tw>0: pdf.loc[d,'wp']=wp/tw; pdf.loc[d,'wu']=wu/tw; pdf.loc[d,'wo']=wo/tw
-    return pdf[(pdf!=0).all(axis=1)]
+                av = df.index[df.index <= d]
+                if len(av) > 0:
+                    row = df.loc[av[-1]]
+                else:
+                    continue
+            if isinstance(row, pd.DataFrame):
+                row = row.iloc[-1]
+            w = r['pw'] / 100; tw += w
+            wp += row['Close'] * w; wu += row['undervalued'] * w; wo += row['overvalued'] * w
+        if tw > 0:
+            pdf.loc[d, 'wp'] = wp / tw
+            pdf.loc[d, 'wu'] = wu / tw
+            pdf.loc[d, 'wo'] = wo / tw
+    return pdf[(pdf != 0).all(axis=1)]
 
-def p2j(p): return json.dumps(p.to_dict(orient='records'),indent=2,ensure_ascii=False)
+def p2j(p):
+    return json.dumps(p.to_dict(orient='records'), indent=2, ensure_ascii=False)
+
 def j2p(j):
     try:
-        df=pd.DataFrame(json.loads(j))
+        df = pd.DataFrame(json.loads(j))
         if 'ticker' in df.columns and 'weight' in df.columns:
-            df['weight']=pd.to_numeric(df['weight'],errors='coerce').fillna(0); return df[['ticker','weight']]
-    except: pass
+            df['weight'] = pd.to_numeric(df['weight'], errors='coerce').fillna(0)
+            return df[['ticker', 'weight']]
+    except:
+        pass
+    return None
+
+def wl2j(wl):
+    return json.dumps(wl, indent=2, ensure_ascii=False)
+
+def j2wl(j):
+    try:
+        data = json.loads(j)
+        if isinstance(data, list) and all(isinstance(t, str) for t in data):
+            return data
+    except:
+        pass
     return None
 
 
 # ═══════════════════════════════════
-# RENDER
+# RENDER HELPERS
 # ═══════════════════════════════════
 
-def _hero():
-    st.markdown("""<div class="hero">
-        <h1>Geraldine Weiss</h1>
-        <p>Dividend Intelligence — Valoración profesional por rentabilidad de dividendos</p>
-        <div class="hero-line"></div>
-    </div>""", unsafe_allow_html=True)
+def _signal(sig, price, desc):
+    cls = 'buy' if 'COMPRA' in sig else 'sell' if 'VENTA' in sig else 'hold'
+    cm = {"COMPRA FUERTE": "var(--a)", "COMPRA": "#51cf66", "MANTENER": "var(--gd)", "VENTA": "#f97316", "VENTA FUERTE": "var(--rd)"}
+    st.markdown(f'<div class="sig {cls}"><div class="sg"></div><div class="sl">Señal de valoración</div><div class="sv" style="color:{cm.get(sig,"#fff")}">{sig}</div><div class="ss">&#36;{price:.2f} · {desc}</div></div>', unsafe_allow_html=True)
 
-def _signal(sig,price,desc):
-    cls='buy' if 'COMPRA' in sig else 'sell' if 'VENTA' in sig else 'hold'
-    cm={"COMPRA FUERTE":"var(--a)","COMPRA":"#51cf66","MANTENER":"var(--gd)","VENTA":"#f97316","VENTA FUERTE":"var(--rd)"}
-    st.markdown(f'<div class="sig {cls}"><div class="sg"></div><div class="sl">Señal de valoración</div><div class="sv" style="color:{cm.get(sig,"#fff")}">{sig}</div><div class="ss">&#36;{price:.2f} · {desc}</div></div>',unsafe_allow_html=True)
-
-def _badges(src,cl,clb):
-    sc='bd-g' if src=='dividendhistory.org' else 'bd-c'
-    sn='dividendhistory.org' if src=='dividendhistory.org' else 'yfinance'
-    cc={'high':'bd-g','medium':'bd-y','low':'bd-r'}[cl]
-    st.markdown(f'<div class="br"><span class="bd {sc}">📊 {sn}</span><span class="bd {cc}">🎯 {clb}</span></div>',unsafe_allow_html=True)
+def _badges(src, cl, clb):
+    sc = 'bd-g' if src == 'dividendhistory.org' else 'bd-c'
+    sn = 'dividendhistory.org' if src == 'dividendhistory.org' else 'yfinance'
+    cc = {'high': 'bd-g', 'medium': 'bd-y', 'low': 'bd-r'}[cl]
+    st.markdown(f'<div class="br"><span class="bd {sc}">📊 {sn}</span><span class="bd {cc}">🎯 {clb}</span></div>', unsafe_allow_html=True)
 
 def _quality(q):
-    gr,tot,d=q['grade'],q['total_score'],q['details']
-    gc={'A':'var(--a)','B':'#51cf66','C':'var(--gd)','D':'#f97316','F':'var(--rd)'}.get(gr,'#fff')
-    bars=[('Historial',d['years_score'],30,'var(--a)'),('Crecimiento',d['growth_score'],30,'var(--a2)'),('Estabilidad',d['stability_score'],20,'var(--gd)'),('Frecuencia',d['frequency_score'],20,'#a78bfa')]
-    bh="".join(f'<div class="qg-i"><div class="ql">{l}</div><div class="qg-tk"><div class="qg-fl" style="width:{v/m*100}%;background:{c}"></div></div><div class="qv">{v}/{m}</div></div>' for l,v,m,c in bars)
-    st.markdown(f'<div class="qg"><div class="qg-g" style="border:2px solid {gc};color:{gc}">{gr}</div><div style="flex:1"><div class="qg-nfo"><b>{tot}/100</b> · {d["consecutive_years"]} años · {d["payments_per_year"]:.1f} pagos/año · Crec. {d["growth_pct"]:.0f}%</div><div class="qg-bars">{bh}</div></div></div>',unsafe_allow_html=True)
+    gr, tot, d = q['grade'], q['total_score'], q['details']
+    gc = {'A': 'var(--a)', 'B': '#51cf66', 'C': 'var(--gd)', 'D': '#f97316', 'F': 'var(--rd)'}.get(gr, '#fff')
+    bars = [('Historial', d['years_score'], 30, 'var(--a)'), ('Crecimiento', d['growth_score'], 30, 'var(--a2)'),
+            ('Estabilidad', d['stability_score'], 20, 'var(--gd)'), ('Frecuencia', d['frequency_score'], 20, '#a78bfa')]
+    bh = "".join(f'<div class="qg-i"><div class="ql">{l}</div><div class="qg-tk"><div class="qg-fl" style="width:{v/m*100}%;background:{c}"></div></div><div class="qv">{v}/{m}</div></div>' for l, v, m, c in bars)
+    st.markdown(f'<div class="qg"><div class="qg-g" style="border:2px solid {gc};color:{gc}">{gr}</div><div style="flex:1"><div class="qg-nfo"><b>{tot}/100</b> · {d["consecutive_years"]} años · {d["payments_per_year"]:.1f} pagos/año · Crec. {d["growth_pct"]:.0f}%</div><div class="qg-bars">{bh}</div></div></div>', unsafe_allow_html=True)
 
-def _projection(proj,inv=10000):
-    if not proj: return
-    items=""
+def _safety(s):
+    """Render Dividend Safety Score"""
+    gr, sc, d = s['grade'], s['score'], s['details']
+    gc = {'A': 'var(--a)', 'B': '#51cf66', 'C': 'var(--gd)', 'D': '#f97316', 'F': 'var(--rd)', '?': 'var(--t3)'}.get(gr, '#fff')
+    pr_txt = f"{d['payout_ratio']:.0f}%" if d['payout_ratio'] is not None else "N/A"
+    de_txt = f"{d['debt_equity']:.0f}" if d['debt_equity'] is not None else "N/A"
+    fcf_txt = f"{d['fcf_coverage']:.1f}x" if d['fcf_coverage'] is not None else "N/A"
+    st.markdown(f'<div class="qg"><div class="qg-g" style="border:2px solid {gc};color:{gc}">{gr}</div><div style="flex:1"><div class="qg-nfo"><b>Safety {sc}/100</b> · Payout: {pr_txt} · Deuda/Equity: {de_txt} · FCF Coverage: {fcf_txt}</div></div></div>', unsafe_allow_html=True)
+
+def _projection(proj, inv=10000):
+    if not proj:
+        return
+    items = ""
     for p in proj:
-        yr="Hoy" if p['year']==0 else f"Año {p['year']}"
-        items+=f'<div class="pj-i"><div class="py">{yr}</div><div class="pv">&#36;{p["income"]:.0f}</div><div class="pc">YoC {p["yoc"]:.2f}%</div></div>'
-    st.markdown(f'<div style="font-size:11px;color:var(--t3);margin-bottom:5px">Proyección anual · Inversión: &#36;{inv:,.0f}</div><div class="pj">{items}</div>',unsafe_allow_html=True)
+        yr = "Hoy" if p['year'] == 0 else f"Año {p['year']}"
+        items += f'<div class="pj-i"><div class="py">{yr}</div><div class="pv">&#36;{p["income"]:.0f}</div><div class="pc">YoC {p["yoc"]:.2f}%</div></div>'
+    st.markdown(f'<div style="font-size:11px;color:var(--t3);margin-bottom:5px">Proyección anual · Inversión: &#36;{inv:,.0f}</div><div class="pj">{items}</div>', unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════
 # CHARTS
 # ═══════════════════════════════════
 
-CC={'bg':'#0a0e18','g':'rgba(255,255,255,0.03)','t':'#8899b4','a':'#00d87a','c':'#00a8cc','r':'#e53e3e','gd':'#e5a910','ad':'rgba(0,216,122,0.07)'}
+CC = {'bg': '#0a0e18', 'g': 'rgba(255,255,255,0.03)', 't': '#8899b4',
+      'a': '#00d87a', 'c': '#00a8cc', 'r': '#e53e3e', 'gd': '#e5a910',
+      'ad': 'rgba(0,216,122,0.07)'}
 
-def _L(title='',h=480):
-    return dict(template='plotly_dark',plot_bgcolor=CC['bg'],paper_bgcolor=CC['bg'],height=h,hovermode='x unified',margin=dict(l=50,r=20,t=55,b=40),
-        title=dict(text=title,font=dict(family='Outfit',size=15,color='#dce4f0'),x=0.5,xanchor='center'),
-        xaxis=dict(gridcolor=CC['g'],showgrid=True,zeroline=False,tickformat='%b %Y',tickfont=dict(family='JetBrains Mono',size=9,color=CC['t'])),
-        yaxis=dict(gridcolor=CC['g'],showgrid=True,zeroline=False,tickfont=dict(family='JetBrains Mono',size=9,color=CC['t'])),
-        legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1,font=dict(family='DM Sans',size=10,color=CC['t']),bgcolor='rgba(10,14,24,0.8)',bordercolor='rgba(255,255,255,0.04)',borderwidth=1),
-        hoverlabel=dict(bgcolor='#131b2e',bordercolor='rgba(255,255,255,0.06)',font=dict(family='DM Sans',size=11)))
+def _L(title='', h=480):
+    return dict(
+        template='plotly_dark', plot_bgcolor=CC['bg'], paper_bgcolor=CC['bg'],
+        height=h, hovermode='x unified', margin=dict(l=50, r=20, t=55, b=40),
+        title=dict(text=title, font=dict(family='Outfit', size=15, color='#dce4f0'), x=0.5, xanchor='center'),
+        xaxis=dict(gridcolor=CC['g'], showgrid=True, zeroline=False, tickformat='%b %Y',
+                   tickfont=dict(family='JetBrains Mono', size=9, color=CC['t'])),
+        yaxis=dict(gridcolor=CC['g'], showgrid=True, zeroline=False,
+                   tickfont=dict(family='JetBrains Mono', size=9, color=CC['t'])),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font=dict(family='DM Sans', size=10, color=CC['t']),
+                    bgcolor='rgba(10,14,24,0.8)', bordercolor='rgba(255,255,255,0.04)', borderwidth=1),
+        hoverlabel=dict(bgcolor='#131b2e', bordercolor='rgba(255,255,255,0.06)', font=dict(family='DM Sans', size=11)))
 
-def ch_val(adf,tk):
-    a=adf.copy(); fig=go.Figure()
-    fig.add_trace(go.Scatter(x=a.index,y=a['overvalued'],line=dict(color='rgba(0,0,0,0)'),showlegend=False,hoverinfo='skip'))
-    fig.add_trace(go.Scatter(x=a.index,y=a['undervalued'],name='Rango Valor',fill='tonexty',fillcolor=CC['ad'],line=dict(color='rgba(0,0,0,0)'),hoverinfo='skip'))
-    fig.add_trace(go.Scatter(x=a.index,y=a['overvalued'],name='Sobrevalorada',line=dict(color=CC['r'],width=1.8,dash='dot'),hovertemplate='%{y:.2f}<extra></extra>'))
-    fig.add_trace(go.Scatter(x=a.index,y=a['undervalued'],name='Infravalorada',line=dict(color=CC['a'],width=1.8,dash='dot'),hovertemplate='%{y:.2f}<extra></extra>'))
-    fig.add_trace(go.Scatter(x=a.index,y=a['Close'],name='Precio',line=dict(color=CC['c'],width=2.2),hovertemplate='%{y:.2f}<extra></extra>'))
-    fig.add_trace(go.Scatter(x=[a.index[-1]],y=[a.iloc[-1]['Close']],mode='markers',marker=dict(size=7,color=CC['c'],line=dict(color='white',width=1.5)),showlegend=False))
-    fig.update_layout(**_L(f'{tk} — Bandas de Valoración')); return fig
+def ch_val(adf, tk):
+    a = adf.copy(); fig = go.Figure()
+    fig.add_trace(go.Scatter(x=a.index, y=a['overvalued'], line=dict(color='rgba(0,0,0,0)'), showlegend=False, hoverinfo='skip'))
+    fig.add_trace(go.Scatter(x=a.index, y=a['undervalued'], name='Rango Valor', fill='tonexty', fillcolor=CC['ad'], line=dict(color='rgba(0,0,0,0)'), hoverinfo='skip'))
+    fig.add_trace(go.Scatter(x=a.index, y=a['overvalued'], name='Sobrevalorada', line=dict(color=CC['r'], width=1.8, dash='dot'), hovertemplate='%{y:.2f}<extra></extra>'))
+    fig.add_trace(go.Scatter(x=a.index, y=a['undervalued'], name='Infravalorada', line=dict(color=CC['a'], width=1.8, dash='dot'), hovertemplate='%{y:.2f}<extra></extra>'))
+    fig.add_trace(go.Scatter(x=a.index, y=a['Close'], name='Precio', line=dict(color=CC['c'], width=2.2), hovertemplate='%{y:.2f}<extra></extra>'))
+    fig.add_trace(go.Scatter(x=[a.index[-1]], y=[a.iloc[-1]['Close']], mode='markers', marker=dict(size=7, color=CC['c'], line=dict(color='white', width=1.5)), showlegend=False))
+    fig.update_layout(**_L(f'{tk} — Bandas de Valoración'))
+    return fig
 
-def ch_yield(adf,tk):
-    a=adf.copy(); yp=a['div_yield']*100; p95,p50,p05=yp.quantile(0.95),yp.median(),yp.quantile(0.05); fig=go.Figure()
-    fig.add_hrect(y0=p95*0.9,y1=yp.max()*1.05,fillcolor="rgba(0,216,122,0.04)",line_width=0)
-    fig.add_hrect(y0=yp.min()*0.95,y1=p05*1.1,fillcolor="rgba(229,62,62,0.03)",line_width=0)
-    for v,c,l in [(p95,CC['a'],f'P95 {p95:.2f}%'),(p50,CC['gd'],f'Med {p50:.2f}%'),(p05,CC['r'],f'P5 {p05:.2f}%')]:
-        fig.add_hline(y=v,line=dict(color=c,width=1,dash='dash'),annotation_text=l,annotation_position="right",annotation_font=dict(color=c,size=9,family='JetBrains Mono'))
-    fig.add_trace(go.Scatter(x=a.index,y=yp,line=dict(color=CC['c'],width=2),fill='tozeroy',fillcolor='rgba(0,168,204,0.05)',hovertemplate='%{y:.2f}%<extra></extra>'))
-    fig.add_trace(go.Scatter(x=[a.index[-1]],y=[yp.iloc[-1]],mode='markers',marker=dict(size=7,color=CC['c'],line=dict(color='white',width=1.5)),showlegend=False))
-    fig.update_layout(**_L(f'{tk} — Yield TTM',380)); fig.update_yaxes(ticksuffix='%'); return fig
+def ch_yield(adf, tk):
+    a = adf.copy(); yp = a['div_yield'] * 100
+    p95, p50, p05 = yp.quantile(0.95), yp.median(), yp.quantile(0.05)
+    fig = go.Figure()
+    fig.add_hrect(y0=p95*0.9, y1=yp.max()*1.05, fillcolor="rgba(0,216,122,0.04)", line_width=0)
+    fig.add_hrect(y0=yp.min()*0.95, y1=p05*1.1, fillcolor="rgba(229,62,62,0.03)", line_width=0)
+    for v, c, l in [(p95, CC['a'], f'P95 {p95:.2f}%'), (p50, CC['gd'], f'Med {p50:.2f}%'), (p05, CC['r'], f'P5 {p05:.2f}%')]:
+        fig.add_hline(y=v, line=dict(color=c, width=1, dash='dash'), annotation_text=l, annotation_position="right", annotation_font=dict(color=c, size=9, family='JetBrains Mono'))
+    fig.add_trace(go.Scatter(x=a.index, y=yp, line=dict(color=CC['c'], width=2), fill='tozeroy', fillcolor='rgba(0,168,204,0.05)', hovertemplate='%{y:.2f}%<extra></extra>'))
+    fig.add_trace(go.Scatter(x=[a.index[-1]], y=[yp.iloc[-1]], mode='markers', marker=dict(size=7, color=CC['c'], line=dict(color='white', width=1.5)), showlegend=False))
+    fig.update_layout(**_L(f'{tk} — Yield TTM', 380))
+    fig.update_yaxes(ticksuffix='%')
+    return fig
 
-def ch_bt(adf,bt,tk):
-    if bt is None: return None
-    a=adf.copy(); tr=bt['trades']; fig=go.Figure()
-    fig.add_trace(go.Scatter(x=a.index,y=a['Close'],name='Precio',line=dict(color='rgba(0,168,204,0.3)',width=1.5)))
-    fig.add_trace(go.Scatter(x=tr['entry_date'],y=tr['entry_price'],mode='markers',name='Compra',marker=dict(size=9,color=CC['a'],symbol='triangle-up',line=dict(color='white',width=1))))
-    fig.add_trace(go.Scatter(x=tr['exit_date'],y=tr['exit_price'],mode='markers',name='Venta',marker=dict(size=9,color=CC['r'],symbol='triangle-down',line=dict(color='white',width=1))))
-    for _,t in tr.iterrows():
-        fig.add_trace(go.Scatter(x=[t['entry_date'],t['exit_date']],y=[t['entry_price'],t['exit_price']],mode='lines',line=dict(color=CC['a'] if t['return_pct']>0 else CC['r'],width=0.8,dash='dash'),showlegend=False,hoverinfo='skip'))
-    fig.update_layout(**_L(f'{tk} — Backtest',420)); return fig
+def ch_bt(adf, bt, tk, bh_ret=0):
+    """Backtest chart with Buy & Hold comparison line"""
+    if bt is None:
+        return None
+    a = adf.copy(); tr = bt['trades']; fig = go.Figure()
+    fig.add_trace(go.Scatter(x=a.index, y=a['Close'], name='Precio', line=dict(color='rgba(0,168,204,0.3)', width=1.5)))
+    # Buy & Hold normalized line
+    if len(a) > 1:
+        bh_normalized = (a['Close'] / a['Close'].iloc[0]) * 100
+        fig.add_trace(go.Scatter(x=a.index, y=bh_normalized, name=f'B&H ({bh_ret:.0f}%)', line=dict(color='rgba(255,255,255,0.2)', width=1.5, dash='dash'), yaxis='y2'))
+    fig.add_trace(go.Scatter(x=tr['entry_date'], y=tr['entry_price'], mode='markers', name='Compra', marker=dict(size=9, color=CC['a'], symbol='triangle-up', line=dict(color='white', width=1))))
+    fig.add_trace(go.Scatter(x=tr['exit_date'], y=tr['exit_price'], mode='markers', name='Venta', marker=dict(size=9, color=CC['r'], symbol='triangle-down', line=dict(color='white', width=1))))
+    for _, t in tr.iterrows():
+        fig.add_trace(go.Scatter(x=[t['entry_date'], t['exit_date']], y=[t['entry_price'], t['exit_price']], mode='lines', line=dict(color=CC['a'] if t['return_pct'] > 0 else CC['r'], width=0.8, dash='dash'), showlegend=False, hoverinfo='skip'))
+    layout = _L(f'{tk} — Backtest vs Buy & Hold', 420)
+    layout['yaxis2'] = dict(overlaying='y', side='right', showgrid=False, tickfont=dict(family='JetBrains Mono', size=8, color='rgba(255,255,255,0.2)'), ticksuffix='%')
+    fig.update_layout(**layout)
+    return fig
 
 def ch_port(pdf):
-    p=pdf.copy(); fig=go.Figure()
-    fig.add_trace(go.Scatter(x=p.index,y=p['wo'],line=dict(color='rgba(0,0,0,0)'),showlegend=False,hoverinfo='skip'))
-    fig.add_trace(go.Scatter(x=p.index,y=p['wu'],name='Rango',fill='tonexty',fillcolor=CC['ad'],line=dict(color='rgba(0,0,0,0)'),hoverinfo='skip'))
-    fig.add_trace(go.Scatter(x=p.index,y=p['wo'],name='Sobrev.',line=dict(color=CC['r'],width=1.8,dash='dot')))
-    fig.add_trace(go.Scatter(x=p.index,y=p['wu'],name='Infrav.',line=dict(color=CC['a'],width=1.8,dash='dot')))
-    fig.add_trace(go.Scatter(x=p.index,y=p['wp'],name='Ponderado',line=dict(color=CC['c'],width=2.2)))
-    fig.add_trace(go.Scatter(x=[p.index[-1]],y=[p.iloc[-1]['wp']],mode='markers',marker=dict(size=7,color=CC['c'],line=dict(color='white',width=1.5)),showlegend=False))
-    fig.update_layout(**_L('Cartera — Valoración Ponderada')); return fig
+    p = pdf.copy(); fig = go.Figure()
+    fig.add_trace(go.Scatter(x=p.index, y=p['wo'], line=dict(color='rgba(0,0,0,0)'), showlegend=False, hoverinfo='skip'))
+    fig.add_trace(go.Scatter(x=p.index, y=p['wu'], name='Rango', fill='tonexty', fillcolor=CC['ad'], line=dict(color='rgba(0,0,0,0)'), hoverinfo='skip'))
+    fig.add_trace(go.Scatter(x=p.index, y=p['wo'], name='Sobrev.', line=dict(color=CC['r'], width=1.8, dash='dot')))
+    fig.add_trace(go.Scatter(x=p.index, y=p['wu'], name='Infrav.', line=dict(color=CC['a'], width=1.8, dash='dot')))
+    fig.add_trace(go.Scatter(x=p.index, y=p['wp'], name='Ponderado', line=dict(color=CC['c'], width=2.2)))
+    fig.add_trace(go.Scatter(x=[p.index[-1]], y=[p.iloc[-1]['wp']], mode='markers', marker=dict(size=7, color=CC['c'], line=dict(color='white', width=1.5)), showlegend=False))
+    fig.update_layout(**_L('Cartera — Valoración Ponderada'))
+    return fig
 
 def ch_comp(res):
-    fig=go.Figure(); tks=[r['ticker'] for r in res]; ps=[r['price'] for r in res]; uv=[r['undervalued'] for r in res]; ov=[r['overvalued'] for r in res]; x=list(range(len(tks)))
-    fig.add_trace(go.Bar(x=x,y=[o-u for o,u in zip(ov,uv)],base=uv,name='Rango',marker_color='rgba(0,216,122,0.07)',marker_line=dict(color='rgba(0,216,122,0.15)',width=1),hoverinfo='skip'))
-    cols=[CC['a'] if 'COMPRA' in r['signal'] else CC['r'] if 'VENTA' in r['signal'] else CC['gd'] for r in res]
-    fig.add_trace(go.Scatter(x=x,y=ps,name='Precio',mode='markers',marker=dict(size=12,color=cols,line=dict(color='white',width=1.5),symbol='diamond')))
-    fig.update_layout(**_L('Comparación',400)); fig.update_xaxes(tickmode='array',tickvals=x,ticktext=tks,tickformat=None); return fig
+    fig = go.Figure()
+    tks = [r['ticker'] for r in res]; ps = [r['price'] for r in res]
+    uv = [r['undervalued'] for r in res]; ov = [r['overvalued'] for r in res]
+    x = list(range(len(tks)))
+    fig.add_trace(go.Bar(x=x, y=[o-u for o, u in zip(ov, uv)], base=uv, name='Rango', marker_color='rgba(0,216,122,0.07)', marker_line=dict(color='rgba(0,216,122,0.15)', width=1), hoverinfo='skip'))
+    cols = [CC['a'] if 'COMPRA' in r['signal'] else CC['r'] if 'VENTA' in r['signal'] else CC['gd'] for r in res]
+    fig.add_trace(go.Scatter(x=x, y=ps, name='Precio', mode='markers', marker=dict(size=12, color=cols, line=dict(color='white', width=1.5), symbol='diamond')))
+    fig.update_layout(**_L('Comparación', 400))
+    fig.update_xaxes(tickmode='array', tickvals=x, ticktext=tks, tickformat=None)
+    return fig
 
 def ch_pie(pd_):
-    fig=go.Figure(); cols=['#00d87a','#00a8cc','#7b2ff7','#e5a910','#e53e3e','#51cf66','#f97316','#06b6d4','#a78bfa','#fb7185']
-    fig.add_trace(go.Pie(labels=pd_['ticker'],values=pd_['weight'],marker=dict(colors=cols[:len(pd_)],line=dict(color=CC['bg'],width=3)),textinfo='label+percent',textfont=dict(family='Outfit',size=11,color='white'),hole=0.5))
-    fig.update_layout(template='plotly_dark',height=350,plot_bgcolor=CC['bg'],paper_bgcolor=CC['bg'],showlegend=False,margin=dict(l=10,r=10,t=10,b=10),annotations=[dict(text='<b>Cartera</b>',font=dict(family='Outfit',size=13,color=CC['t']),showarrow=False)]); return fig
+    fig = go.Figure()
+    cols = ['#00d87a', '#00a8cc', '#7b2ff7', '#e5a910', '#e53e3e', '#51cf66', '#f97316', '#06b6d4', '#a78bfa', '#fb7185']
+    fig.add_trace(go.Pie(labels=pd_['ticker'], values=pd_['weight'], marker=dict(colors=cols[:len(pd_)], line=dict(color=CC['bg'], width=3)),
+                         textinfo='label+percent', textfont=dict(family='Outfit', size=11, color='white'), hole=0.5))
+    fig.update_layout(template='plotly_dark', height=350, plot_bgcolor=CC['bg'], paper_bgcolor=CC['bg'],
+                      showlegend=False, margin=dict(l=10, r=10, t=10, b=10),
+                      annotations=[dict(text='<b>Cartera</b>', font=dict(family='Outfit', size=13, color=CC['t']), showarrow=False)])
+    return fig
 
 def ch_bars(dd):
-    da=dd.copy(); da['year']=dd['ex_dividend_date'].dt.year; da=da.groupby('year')['amount'].sum().sort_index()
-    cols=[CC['a'] if i==len(da)-1 else 'rgba(0,216,122,0.3)' for i in range(len(da))]; fig=go.Figure()
-    fig.add_trace(go.Bar(x=da.index,y=da.values,marker_color=cols,hovertemplate='%{x}: %{y:.4f}<extra></extra>'))
-    fig.update_layout(**_L('Dividendo Anual',270)); fig.update_xaxes(dtick=1,tickformat='d'); return fig
+    da = dd.copy(); da['year'] = dd['ex_dividend_date'].dt.year
+    da = da.groupby('year')['amount'].sum().sort_index()
+    cols = [CC['a'] if i == len(da)-1 else 'rgba(0,216,122,0.3)' for i in range(len(da))]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=da.index, y=da.values, marker_color=cols, hovertemplate='%{x}: %{y:.4f}<extra></extra>'))
+    fig.update_layout(**_L('Dividendo Anual', 270))
+    fig.update_xaxes(dtick=1, tickformat='d')
+    return fig
 
 
 # ═══════════════════════════════════
@@ -874,9 +1066,15 @@ def main():
     st.caption("Dividend Intelligence — Valoración profesional por rentabilidad de dividendos")
     st.divider()
 
-    t1, t2, t3 = st.tabs(["🎯  Análisis Individual", "📊  Comparación", "💼  Cartera"])
+    t1, t2, t3, t4, t5 = st.tabs([
+        "🎯  Análisis Individual",
+        "📊  Comparación",
+        "💼  Cartera",
+        "🔍  Screener",
+        "👁️  Watchlist"
+    ])
 
-    # ─── TAB 1: Individual ───
+    # ─── TAB 1: Análisis Individual ───
     with t1:
         cfg1, cfg2, cfg3 = st.columns([2, 2, 1])
         with cfg1:
@@ -901,7 +1099,6 @@ def main():
                 st.divider()
                 _badges(r['src'], r['conf'], r['conf_label'])
 
-                # Signal left + Metrics right — compact side-by-side
                 sig_col, met_col = st.columns([1, 2])
                 with sig_col:
                     _signal(r['signal'], r['price'], r['desc'])
@@ -915,7 +1112,15 @@ def main():
                     m5.metric("Zona Compra", f"{r['undervalued']:.2f}", delta=f"{(r['undervalued']/r['price']-1)*100:.1f}%", delta_color="inverse")
                     m6.metric("Zona Venta", f"{r['overvalued']:.2f}", delta=f"{(r['overvalued']/r['price']-1)*100:+.1f}%")
 
-                _quality(r['quality'])
+                # Quality + Safety side by side
+                q1, q2 = st.columns(2)
+                with q1:
+                    st.caption("🏆 Quality Score")
+                    _quality(r['quality'])
+                with q2:
+                    st.caption("🛡️ Dividend Safety")
+                    _safety(r['safety'])
+
                 if r['quality']['grade'] in ['D', 'F']:
                     st.markdown('<div class="ins y">⚠️ <b>Quality bajo.</b> Puede no ser ideal para el método Weiss.</div>', unsafe_allow_html=True)
 
@@ -938,14 +1143,19 @@ def main():
                         st.info("Insuficientes señales para backtest.")
                     else:
                         s = bt['stats']
-                        b1, b2, b3, b4 = st.columns(4)
+                        b1, b2, b3, b4, b5 = st.columns(5)
                         b1.metric("Trades", s['closed_trades'])
                         b2.metric("Win Rate", f"{s['win_rate']:.0f}%")
                         b3.metric("Ret. Medio", f"{s['avg_return']:.1f}%")
-                        b4.metric("Acumulado", f"{s['cumulative_return']:.1f}%")
-                        if s['open_trades'] > 0:
-                            st.caption(f"ℹ️ {s['open_trades']} pos. abierta(s)")
-                        f = ch_bt(r['adf'], bt, tk.upper())
+                        b4.metric("Weiss Acum.", f"{s['cumulative_return']:.1f}%")
+                        b5.metric("Buy & Hold", f"{r['bh_ret']:.1f}%")
+                        # Alpha
+                        alpha = s['cumulative_return'] - r['bh_ret']
+                        if alpha > 0:
+                            st.markdown(f'<div class="ins g"><b>Alpha Weiss: +{alpha:.1f}%</b> sobre Buy & Hold</div>', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'<div class="ins r"><b>Alpha Weiss: {alpha:.1f}%</b> vs Buy & Hold</div>', unsafe_allow_html=True)
+                        f = ch_bt(r['adf'], bt, tk.upper(), r['bh_ret'])
                         if f:
                             st.plotly_chart(f, use_container_width=True)
                         with st.expander("📋 Detalle de operaciones"):
@@ -975,7 +1185,7 @@ def main():
                     ds.columns = ['Fecha Ex-Div', 'Importe']
                     st.dataframe(ds, use_container_width=True, hide_index=True, height=300)
         else:
-            st.markdown('<div class="mt"><div class="mi">💎</div><div class="mh">Selecciona un ticker y pulsa Analizar</div><div class="ms">Valoración por dividendos, quality score, backtest y proyección de ingresos.</div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="mt"><div class="mi">💎</div><div class="mh">Selecciona un ticker y pulsa Analizar</div><div class="ms">Valoración, quality score, safety score, backtest vs B&H y proyección.</div></div>', unsafe_allow_html=True)
 
     # ─── TAB 2: Comparación ───
     with t2:
@@ -992,8 +1202,7 @@ def main():
                 st.error("Mínimo 2 tickers")
             else:
                 with st.spinner(f'{len(tl)} tickers...'):
-                    res = []
-                    pb = st.progress(0)
+                    res = []; pb = st.progress(0)
                     for i, t in enumerate(tl):
                         r = analyze(t, yc)
                         if r:
@@ -1012,6 +1221,7 @@ def main():
                             'Ticker': r['ticker'], 'Precio': f"{r['price']:.2f}",
                             'Yield': f"{r['yield']:.2f}%", 'Señal': r['signal'],
                             'Score': f"{r['score']:.1f}", 'Quality': r['quality']['grade'],
+                            'Safety': r['safety']['grade'],
                             'CAGR': f"{r['cagr']:.1f}%"
                         } for r in res]).sort_values('Score', ascending=False)
                         st.dataframe(cdf, use_container_width=True, hide_index=True)
@@ -1023,19 +1233,19 @@ def main():
                         with c1:
                             st.markdown('<div class="ins g"><b>🟢 Compra</b></div>', unsafe_allow_html=True)
                             for r in buy[:3]:
-                                st.caption(f"**{r['ticker']}** ({r['quality']['grade']}) — Score {r['score']:.0f}")
+                                st.caption(f"**{r['ticker']}** (Q:{r['quality']['grade']} S:{r['safety']['grade']}) — Score {r['score']:.0f}")
                             if not buy:
                                 st.caption("—")
                         with c2:
                             st.markdown('<div class="ins y"><b>🟡 Mantener</b></div>', unsafe_allow_html=True)
                             for r in hold[:3]:
-                                st.caption(f"**{r['ticker']}** ({r['quality']['grade']})")
+                                st.caption(f"**{r['ticker']}** (Q:{r['quality']['grade']} S:{r['safety']['grade']})")
                             if not hold:
                                 st.caption("—")
                         with c3:
                             st.markdown('<div class="ins r"><b>🔴 Venta</b></div>', unsafe_allow_html=True)
                             for r in sell[:3]:
-                                st.caption(f"**{r['ticker']}** ({r['quality']['grade']}) — Score {r['score']:.0f}")
+                                st.caption(f"**{r['ticker']}** (Q:{r['quality']['grade']} S:{r['safety']['grade']}) — Score {r['score']:.0f}")
                             if not sell:
                                 st.caption("—")
 
@@ -1043,7 +1253,6 @@ def main():
     with t3:
         if 'pf' not in st.session_state:
             st.session_state.pf = pd.DataFrame(columns=['ticker', 'weight'])
-
         c1, c2 = st.columns([2, 1])
         with c1:
             ca, cb, cc = st.columns([2, 1, 1])
@@ -1052,8 +1261,7 @@ def main():
             with cb:
                 nw = st.number_input("Peso %", 0.0, 100.0, 10.0, 5.0, key="pw")
             with cc:
-                st.write("")
-                st.write("")
+                st.write(""); st.write("")
                 if st.button("➕", use_container_width=True):
                     if nt:
                         st.session_state.pf = pd.concat([st.session_state.pf, pd.DataFrame([{'ticker': nt.upper(), 'weight': nw}])], ignore_index=True)
@@ -1062,32 +1270,24 @@ def main():
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("🗑️ Limpiar", use_container_width=True):
-                    st.session_state.pf = pd.DataFrame(columns=['ticker', 'weight'])
-                    st.rerun()
+                    st.session_state.pf = pd.DataFrame(columns=['ticker', 'weight']); st.rerun()
             with cc2:
                 if st.button("📋 Demo", use_container_width=True):
-                    st.session_state.pf = pd.DataFrame([{'ticker': 'KO', 'weight': 25}, {'ticker': 'JNJ', 'weight': 25}, {'ticker': 'PG', 'weight': 25}, {'ticker': 'PEP', 'weight': 25}])
-                    st.rerun()
+                    st.session_state.pf = pd.DataFrame([{'ticker': 'KO', 'weight': 25}, {'ticker': 'JNJ', 'weight': 25}, {'ticker': 'PG', 'weight': 25}, {'ticker': 'PEP', 'weight': 25}]); st.rerun()
             if not st.session_state.pf.empty:
                 st.download_button("💾 Guardar", p2j(st.session_state.pf), "cartera.json", "application/json", use_container_width=True)
             uf = st.file_uploader("📂 Cargar", type=['json'], key="pu", label_visibility="collapsed")
             if uf:
                 ld = j2p(uf.read().decode('utf-8'))
                 if ld is not None:
-                    st.session_state.pf = ld
-                    st.rerun()
-
+                    st.session_state.pf = ld; st.rerun()
         st.divider()
-
         if not st.session_state.pf.empty:
             edf = st.data_editor(st.session_state.pf, use_container_width=True, hide_index=True, num_rows="dynamic")
-            edf = edf.dropna(subset=['ticker'])
-            edf = edf[edf['ticker'].astype(str).str.strip() != '']
-            edf['weight'] = pd.to_numeric(edf['weight'], errors='coerce').fillna(0)
-            edf = edf[edf['weight'] > 0]
+            edf = edf.dropna(subset=['ticker']); edf = edf[edf['ticker'].astype(str).str.strip() != '']
+            edf['weight'] = pd.to_numeric(edf['weight'], errors='coerce').fillna(0); edf = edf[edf['weight'] > 0]
             st.session_state.pf = edf.reset_index(drop=True)
             st.divider()
-
             if st.button("🔍 Analizar Cartera", type="primary", use_container_width=True):
                 with st.spinner('Analizando...'):
                     pd__ = st.session_state.pf.copy()
@@ -1095,14 +1295,11 @@ def main():
                         st.error("Vacía")
                     else:
                         pd__['weight'] = (pd__['weight'] / pd__['weight'].sum()) * 100
-                        pr = []
-                        fl = []
-                        pb = st.progress(0)
+                        pr = []; fl = []; pb = st.progress(0)
                         for i, row in pd__.iterrows():
                             r = analyze(row['ticker'], 6)
                             if r:
-                                r['pw'] = row['weight']
-                                pr.append(r)
+                                r['pw'] = row['weight']; pr.append(r)
                             else:
                                 fl.append(row['ticker'])
                             pb.progress((i + 1) / len(pd__))
@@ -1120,7 +1317,6 @@ def main():
                             cls = 'buy' if 'COMPRA' in ps else 'sell' if 'VENTA' in ps else 'hold'
                             pcm = {"COMPRA": "var(--a)", "VENTA": "var(--rd)", "MANTENER": "var(--gd)"}
                             st.markdown(f'<div class="sig {cls}"><div class="sg"></div><div class="sl">Señal de cartera</div><div class="sv" style="color:{pcm[ps]}">{ps}</div><div class="ss">Score ponderado: {asc:.1f}</div></div>', unsafe_allow_html=True)
-
                             m1, m2, m3 = st.columns(3)
                             m1.metric("Yield Pond.", f"{ty:.2f}%")
                             m2.metric("CAGR Pond.", f"{tc:.2f}%")
@@ -1128,25 +1324,17 @@ def main():
                             m4, m5, _ = st.columns(3)
                             m4.metric("Quality", f"{aq:.0f}/100")
                             m5.metric("Posiciones", len(pr))
-
                             st.divider()
                             c1, c2 = st.columns(2)
                             with c1:
                                 st.plotly_chart(ch_pie(pd__), use_container_width=True)
                             with c2:
-                                det = pd.DataFrame([{
-                                    'Ticker': r['ticker'], 'Peso': f"{r['pw']:.1f}%",
-                                    'Yield': f"{r['yield']:.2f}%", 'Señal': r['signal'],
-                                    'Q': r['quality']['grade'], 'Score': f"{r['score']:.1f}"
-                                } for r in pr])
+                                det = pd.DataFrame([{'Ticker': r['ticker'], 'Peso': f"{r['pw']:.1f}%", 'Yield': f"{r['yield']:.2f}%", 'Señal': r['signal'], 'Q': r['quality']['grade'], 'S': r['safety']['grade'], 'Score': f"{r['score']:.1f}"} for r in pr])
                                 st.dataframe(det, use_container_width=True, hide_index=True)
-
                             st.divider()
                             st.plotly_chart(ch_port(portfolio_analysis(pr)), use_container_width=True)
-
                             st.divider()
-                            bp = [r for r in pr if 'COMPRA' in r['signal']]
-                            sp = [r for r in pr if 'VENTA' in r['signal']]
+                            bp = [r for r in pr if 'COMPRA' in r['signal']]; sp = [r for r in pr if 'VENTA' in r['signal']]
                             c1, c2 = st.columns(2)
                             with c1:
                                 st.markdown('<div class="ins g"><b>🟢 Aumentar</b></div>', unsafe_allow_html=True)
@@ -1161,7 +1349,195 @@ def main():
                                 if not sp:
                                     st.caption("—")
         else:
-            st.markdown('<div class="mt"><div class="mi">💼</div><div class="mh">Construye tu cartera</div><div class="ms">Añade tickers con pesos o usa Demo. Puedes guardar y cargar en JSON.</div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="mt"><div class="mi">💼</div><div class="mh">Construye tu cartera</div><div class="ms">Añade tickers con pesos o usa Demo.</div></div>', unsafe_allow_html=True)
+
+    # ─── TAB 4: Screener ───
+    with t4:
+        st.caption("Escanea universos de acciones y encuentra las más infravaloradas según Geraldine Weiss")
+
+        universe = st.selectbox("Universo", ["🇺🇸 Dividend Aristocrats (USA)", "🇪🇺 Euro Dividends", "📝 Personalizado"])
+
+        if universe == "📝 Personalizado":
+            custom_tickers = st.text_input("Tickers personalizados (comas)", value="AAPL, MSFT, GOOG, AMZN")
+            ticker_list = [t.strip().upper() for t in custom_tickers.split(',') if t.strip()]
+        elif "Euro" in universe:
+            ticker_list = EURO_DIVIDENDS
+        else:
+            ticker_list = ARISTOCRATS
+
+        st.caption(f"📋 {len(ticker_list)} tickers en el universo seleccionado")
+
+        scr_years = st.selectbox("Período análisis", [3, 5, 6], index=2, key="scr_yr")
+
+        if st.button("🔍 Escanear Universo", type="primary", use_container_width=True):
+            results = []
+            failed = []
+            pb = st.progress(0)
+            status = st.empty()
+
+            for i, t in enumerate(ticker_list):
+                status.caption(f"Analizando {t}... ({i+1}/{len(ticker_list)})")
+                r = analyze(t, scr_years)
+                if r:
+                    results.append(r)
+                else:
+                    failed.append(t)
+                pb.progress((i + 1) / len(ticker_list))
+
+            pb.empty()
+            status.empty()
+
+            if failed:
+                st.caption(f"⚠️ Sin datos: {', '.join(failed[:10])}{'...' if len(failed) > 10 else ''}")
+
+            if not results:
+                st.error("No se obtuvieron datos para ningún ticker.")
+            else:
+                st.success(f"✅ {len(results)} acciones analizadas")
+
+                # Sort by score (most undervalued first)
+                results.sort(key=lambda x: x['score'], reverse=True)
+
+                # Summary metrics
+                buy_count = len([r for r in results if 'COMPRA' in r['signal']])
+                sell_count = len([r for r in results if 'VENTA' in r['signal']])
+                hold_count = len([r for r in results if r['signal'] == 'MANTENER'])
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Total", len(results))
+                m2.metric("🟢 Compra", buy_count)
+                m3.metric("🟡 Mantener", hold_count)
+                m4.metric("🔴 Venta", sell_count)
+
+                st.divider()
+
+                # Full ranking table
+                ranking = pd.DataFrame([{
+                    'Rank': i + 1,
+                    'Ticker': r['ticker'],
+                    'Precio': f"{r['price']:.2f}",
+                    'Yield': f"{r['yield']:.2f}%",
+                    'Señal': r['signal'],
+                    'Score': f"{r['score']:.1f}",
+                    'Quality': r['quality']['grade'],
+                    'Safety': r['safety']['grade'],
+                    'CAGR': f"{r['cagr']:.1f}%",
+                    'Infrav.': f"{r['undervalued']:.2f}",
+                    'Sobrev.': f"{r['overvalued']:.2f}",
+                } for i, r in enumerate(results)])
+
+                st.dataframe(ranking, use_container_width=True, hide_index=True, height=500)
+
+                st.divider()
+
+                # Top 5 opportunities
+                st.markdown("##### 🏆 Top Oportunidades de Compra")
+                top_buy = [r for r in results if 'COMPRA' in r['signal']][:5]
+                if top_buy:
+                    for r in top_buy:
+                        upside = (r['overvalued'] / r['price'] - 1) * 100
+                        st.markdown(f'<div class="ins g"><b>{r["ticker"]}</b> — {r["signal"]} · Yield {r["yield"]:.2f}% · Quality {r["quality"]["grade"]} · Safety {r["safety"]["grade"]} · Upside potencial: +{upside:.0f}%</div>', unsafe_allow_html=True)
+                else:
+                    st.caption("No hay señales de compra en este universo.")
+
+    # ─── TAB 5: Watchlist ───
+    with t5:
+        st.caption("Tu lista de seguimiento personal con señales actualizadas")
+
+        if 'wl' not in st.session_state:
+            st.session_state.wl = []
+
+        # Add tickers
+        wc1, wc2 = st.columns([3, 1])
+        with wc1:
+            new_wl = st.text_input("Añadir tickers (comas)", key="wl_input", placeholder="KO, JNJ, PG...")
+        with wc2:
+            st.markdown(""); st.markdown("")
+            if st.button("➕ Añadir", use_container_width=True, key="wl_add"):
+                if new_wl:
+                    new_tickers = [t.strip().upper() for t in new_wl.split(',') if t.strip()]
+                    st.session_state.wl = list(set(st.session_state.wl + new_tickers))
+                    st.rerun()
+
+        # Quick actions
+        ac1, ac2, ac3, ac4 = st.columns(4)
+        with ac1:
+            if st.button("🗑️ Limpiar", use_container_width=True, key="wl_clear"):
+                st.session_state.wl = []; st.rerun()
+        with ac2:
+            if st.button("📋 Ejemplo", use_container_width=True, key="wl_demo"):
+                st.session_state.wl = ["KO", "JNJ", "PG", "PEP", "MMM", "XOM", "CAT", "IBM"]; st.rerun()
+        with ac3:
+            if st.session_state.wl:
+                st.download_button("💾 Guardar", wl2j(st.session_state.wl), "watchlist.json", "application/json", use_container_width=True)
+        with ac4:
+            wl_file = st.file_uploader("📂", type=['json'], key="wl_up", label_visibility="collapsed")
+            if wl_file:
+                loaded = j2wl(wl_file.read().decode('utf-8'))
+                if loaded:
+                    st.session_state.wl = loaded; st.rerun()
+
+        if st.session_state.wl:
+            st.divider()
+            st.caption(f"📋 {len(st.session_state.wl)} tickers: {', '.join(st.session_state.wl)}")
+
+            if st.button("🔍 Actualizar Watchlist", type="primary", use_container_width=True, key="wl_scan"):
+                results = []
+                pb = st.progress(0)
+                for i, t in enumerate(st.session_state.wl):
+                    r = analyze(t, 6)
+                    if r:
+                        results.append(r)
+                    pb.progress((i + 1) / len(st.session_state.wl))
+                pb.empty()
+
+                if not results:
+                    st.error("Sin datos")
+                else:
+                    results.sort(key=lambda x: x['score'], reverse=True)
+
+                    buy_count = len([r for r in results if 'COMPRA' in r['signal']])
+                    sell_count = len([r for r in results if 'VENTA' in r['signal']])
+
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Tickers", len(results))
+                    m2.metric("🟢 Compra", buy_count)
+                    m3.metric("🔴 Venta", sell_count)
+
+                    st.divider()
+
+                    # Dashboard table
+                    wl_df = pd.DataFrame([{
+                        'Ticker': r['ticker'],
+                        'Precio': f"{r['price']:.2f}",
+                        'Yield': f"{r['yield']:.2f}%",
+                        'Señal': r['signal'],
+                        'Score': f"{r['score']:.1f}",
+                        'Quality': r['quality']['grade'],
+                        'Safety': r['safety']['grade'],
+                        'CAGR': f"{r['cagr']:.1f}%",
+                    } for r in results])
+                    st.dataframe(wl_df, use_container_width=True, hide_index=True)
+
+                    # Alerts
+                    st.divider()
+                    buys = [r for r in results if 'COMPRA' in r['signal']]
+                    sells = [r for r in results if 'VENTA' in r['signal']]
+
+                    if buys:
+                        st.markdown("##### 🟢 En zona de compra")
+                        for r in buys:
+                            st.markdown(f'<div class="ins g"><b>{r["ticker"]}</b> — {r["signal"]} · Yield {r["yield"]:.2f}% · Score {r["score"]:.0f}</div>', unsafe_allow_html=True)
+
+                    if sells:
+                        st.markdown("##### 🔴 En zona de venta")
+                        for r in sells:
+                            st.markdown(f'<div class="ins r"><b>{r["ticker"]}</b> — {r["signal"]} · Yield {r["yield"]:.2f}% · Score {r["score"]:.0f}</div>', unsafe_allow_html=True)
+
+                    if not buys and not sells:
+                        st.info("Todos los tickers están en zona de mantener.")
+        else:
+            st.markdown('<div class="mt"><div class="mi">👁️</div><div class="mh">Tu Watchlist está vacía</div><div class="ms">Añade tickers para hacer seguimiento de sus señales de valoración.</div></div>', unsafe_allow_html=True)
 
     st.markdown('<div class="ft">by <a href="https://bquantfinance.com" target="_blank">@Gsnchez · bquantfinance.com</a></div>', unsafe_allow_html=True)
 
