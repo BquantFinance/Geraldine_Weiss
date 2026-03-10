@@ -128,6 +128,12 @@ st.markdown("""
         border-radius: var(--r) !important;
         padding: 16px !important;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+        min-height: 95px;
+    }
+    /* Force equal-width metric columns */
+    [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
     }
 
     .stButton > button {
@@ -199,29 +205,75 @@ st.markdown("""
     }
 
     /* Hero */
-    .hero { padding: 0.3rem 0 0.6rem; }
+    @keyframes gradient-shift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    @keyframes line-expand {
+        from { width: 0; opacity: 0; }
+        to { width: 100%; opacity: 1; }
+    }
+    @keyframes fade-up {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .hero {
+        position: relative;
+        padding: 1.2rem 0 0.8rem;
+        overflow: hidden;
+    }
+    .hero::before {
+        content: '';
+        position: absolute;
+        top: -40px;
+        left: -20px;
+        width: 200px;
+        height: 200px;
+        background: radial-gradient(circle, rgba(0, 216, 122, 0.08) 0%, transparent 70%);
+        pointer-events: none;
+    }
     .hero h1 {
         font-family: 'Outfit', sans-serif;
-        font-size: 1.8rem;
-        font-weight: 800;
-        letter-spacing: -0.03em;
+        font-size: 2.6rem;
+        font-weight: 900;
+        letter-spacing: -0.04em;
         margin: 0;
-        line-height: 1.15;
-        background: linear-gradient(135deg, var(--t) 10%, var(--a) 55%, var(--a2) 100%);
+        line-height: 1.1;
+        background: linear-gradient(135deg, #ffffff 0%, var(--a) 40%, var(--a2) 70%, #a78bfa 100%);
+        background-size: 200% 200%;
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
+        animation: gradient-shift 6s ease infinite;
+    }
+    .hero .hero-tag {
+        display: inline-block;
+        font-family: 'Outfit', sans-serif;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.15em;
+        color: var(--a);
+        background: rgba(0, 216, 122, 0.08);
+        border: 1px solid rgba(0, 216, 122, 0.15);
+        border-radius: 20px;
+        padding: 3px 12px;
+        margin-bottom: 10px;
+        animation: fade-up 0.6s ease both;
     }
     .hero p {
         font-family: 'DM Sans', sans-serif;
-        font-size: 12.5px;
-        color: var(--t3);
-        margin: 3px 0 0;
+        font-size: 13px;
+        color: var(--t2);
+        margin: 8px 0 0;
+        animation: fade-up 0.6s ease 0.2s both;
     }
     .hero-line {
-        height: 1.5px;
-        background: linear-gradient(90deg, var(--a), var(--a2) 35%, transparent 80%);
-        margin-top: 10px;
+        height: 2px;
+        background: linear-gradient(90deg, var(--a), var(--a2) 40%, #a78bfa 70%, transparent 100%);
+        margin-top: 14px;
+        animation: line-expand 0.8s ease 0.4s both;
     }
 
     /* Signal */
@@ -727,7 +779,12 @@ def j2p(j):
 # ═══════════════════════════════════
 
 def _hero():
-    st.markdown('<div class="hero"><h1>Geraldine Weiss</h1><p>Dividend Intelligence — Valoración profesional por rentabilidad de dividendos</p><div class="hero-line"></div></div>',unsafe_allow_html=True)
+    st.markdown("""<div class="hero">
+        <div class="hero-tag">💎 Dividend Intelligence Platform</div>
+        <h1>Geraldine Weiss</h1>
+        <p>Valoración profesional por rentabilidad de dividendos · TTM Yield · Quality Score · Backtest</p>
+        <div class="hero-line"></div>
+    </div>""", unsafe_allow_html=True)
 
 def _signal(sig,price,desc):
     cls='buy' if 'COMPRA' in sig else 'sell' if 'VENTA' in sig else 'hold'
