@@ -58,7 +58,7 @@ st.markdown("""
     p, li, span { font-size: 14px; }
     hr {
         border-color: var(--br) !important;
-        margin: 1.2rem 0 !important;
+        margin: 1.8rem 0 !important;
     }
     a { color: var(--a) !important; }
 
@@ -126,14 +126,18 @@ st.markdown("""
         background: linear-gradient(145deg, var(--b3), var(--b2)) !important;
         border: 1px solid var(--br2) !important;
         border-radius: var(--r) !important;
-        padding: 16px !important;
+        padding: 20px 18px !important;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-        min-height: 95px;
+        min-height: 100px;
     }
     /* Force equal-width metric columns */
     [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
         flex: 1 1 0 !important;
         min-width: 0 !important;
+    }
+    /* Vertical gap between metric rows */
+    [data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] {
+        margin-bottom: 4px;
     }
 
     .stButton > button {
@@ -205,84 +209,52 @@ st.markdown("""
     }
 
     /* Hero */
-    @keyframes gradient-shift {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
+    @keyframes fade-up {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
     }
     @keyframes line-expand {
-        from { width: 0; opacity: 0; }
-        to { width: 100%; opacity: 1; }
-    }
-    @keyframes fade-up {
-        from { opacity: 0; transform: translateY(8px); }
-        to { opacity: 1; transform: translateY(0); }
+        from { width: 0; }
+        to { width: 100%; }
     }
     .hero {
         position: relative;
-        padding: 1.2rem 0 0.8rem;
-        overflow: hidden;
-    }
-    .hero::before {
-        content: '';
-        position: absolute;
-        top: -40px;
-        left: -20px;
-        width: 200px;
-        height: 200px;
-        background: radial-gradient(circle, rgba(0, 216, 122, 0.08) 0%, transparent 70%);
-        pointer-events: none;
+        padding: 1rem 0 0.6rem;
     }
     .hero h1 {
         font-family: 'Outfit', sans-serif;
-        font-size: 2.6rem;
+        font-size: 2.8rem;
         font-weight: 900;
         letter-spacing: -0.04em;
         margin: 0;
-        line-height: 1.1;
-        background: linear-gradient(135deg, #ffffff 0%, var(--a) 40%, var(--a2) 70%, #a78bfa 100%);
-        background-size: 200% 200%;
+        line-height: 1.05;
+        background: linear-gradient(135deg, #ffffff 20%, var(--a) 60%, var(--a2) 90%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        animation: gradient-shift 6s ease infinite;
-    }
-    .hero .hero-tag {
-        display: inline-block;
-        font-family: 'Outfit', sans-serif;
-        font-size: 10px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.15em;
-        color: var(--a);
-        background: rgba(0, 216, 122, 0.08);
-        border: 1px solid rgba(0, 216, 122, 0.15);
-        border-radius: 20px;
-        padding: 3px 12px;
-        margin-bottom: 10px;
-        animation: fade-up 0.6s ease both;
+        animation: fade-up 0.5s ease both;
     }
     .hero p {
         font-family: 'DM Sans', sans-serif;
         font-size: 13px;
         color: var(--t2);
-        margin: 8px 0 0;
-        animation: fade-up 0.6s ease 0.2s both;
+        margin: 6px 0 0;
+        animation: fade-up 0.5s ease 0.15s both;
     }
     .hero-line {
         height: 2px;
-        background: linear-gradient(90deg, var(--a), var(--a2) 40%, #a78bfa 70%, transparent 100%);
-        margin-top: 14px;
-        animation: line-expand 0.8s ease 0.4s both;
+        background: linear-gradient(90deg, var(--a), var(--a2) 50%, transparent 100%);
+        margin-top: 12px;
+        animation: line-expand 0.6s ease 0.3s both;
     }
 
     /* Signal */
     .sig {
         position: relative;
         text-align: center;
-        padding: 28px 20px 22px;
-        border-radius: 12px;
-        margin: 14px 0;
+        padding: 36px 24px 30px;
+        border-radius: 14px;
+        margin: 20px 0;
         overflow: hidden;
         background: linear-gradient(145deg, var(--b3), var(--b2));
         border: 1px solid var(--br2);
@@ -305,25 +277,25 @@ st.markdown("""
     }
     .sig .sl {
         font-family: 'Outfit', sans-serif;
-        font-size: 9.5px;
+        font-size: 10px;
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.2em;
         color: var(--t3);
-        margin-bottom: 5px;
+        margin-bottom: 8px;
     }
     .sig .sv {
         font-family: 'Outfit', sans-serif;
-        font-size: 2rem;
+        font-size: 2.4rem;
         font-weight: 900;
         letter-spacing: -0.02em;
         line-height: 1.1;
     }
     .sig .ss {
         font-family: 'JetBrains Mono', monospace;
-        font-size: 12.5px;
+        font-size: 13px;
         color: var(--t2);
-        margin-top: 8px;
+        margin-top: 12px;
     }
     .sig .sg {
         position: absolute;
@@ -345,12 +317,12 @@ st.markdown("""
     .qg {
         display: flex;
         align-items: center;
-        gap: 16px;
+        gap: 18px;
         background: linear-gradient(145deg, var(--b3), var(--b2));
         border: 1px solid var(--br2);
-        border-radius: 12px;
-        padding: 16px 20px;
-        margin: 10px 0;
+        border-radius: 14px;
+        padding: 20px 24px;
+        margin: 16px 0;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
     }
     .qg-g {
@@ -780,9 +752,8 @@ def j2p(j):
 
 def _hero():
     st.markdown("""<div class="hero">
-        <div class="hero-tag">💎 Dividend Intelligence Platform</div>
         <h1>Geraldine Weiss</h1>
-        <p>Valoración profesional por rentabilidad de dividendos · TTM Yield · Quality Score · Backtest</p>
+        <p>Dividend Intelligence — Valoración profesional por rentabilidad de dividendos</p>
         <div class="hero-line"></div>
     </div>""", unsafe_allow_html=True)
 
@@ -918,32 +889,64 @@ def main():
                 else:
                     _badges(r['src'],r['conf'],r['conf_label'])
                     _signal(r['signal'],r['price'],r['desc'])
+
+                    st.markdown("")
+                    st.markdown("")
+                    st.markdown("##### 📊 Métricas Clave")
+                    st.markdown("")
                     m1,m2,m3=st.columns(3)
-                    m1.metric("Precio",f"{r['price']:.2f}"); m2.metric("Yield TTM",f"{r['yield']:.2f}%"); m3.metric("CAGR Div.",f"{r['cagr']:.1f}%",delta="crecimiento anual" if r['cagr']>0 else "decrecimiento",delta_color="normal" if r['cagr']>0 else "inverse")
+                    m1.metric("Precio",f"{r['price']:.2f}")
+                    m2.metric("Yield TTM",f"{r['yield']:.2f}%")
+                    m3.metric("CAGR Div.",f"{r['cagr']:.1f}%",delta="crecimiento anual" if r['cagr']>0 else "decrecimiento",delta_color="normal" if r['cagr']>0 else "inverse")
+                    st.markdown("")
                     m4,m5,m6=st.columns(3)
-                    m4.metric("Dividendo TTM",f"{r['ttm_dividend']:.3f}"); m5.metric("Zona Compra",f"{r['undervalued']:.2f}",delta=f"{(r['undervalued']/r['price']-1)*100:.1f}%",delta_color="inverse"); m6.metric("Zona Venta",f"{r['overvalued']:.2f}",delta=f"{(r['overvalued']/r['price']-1)*100:+.1f}%")
+                    m4.metric("Dividendo TTM",f"{r['ttm_dividend']:.3f}")
+                    m5.metric("Zona Compra",f"{r['undervalued']:.2f}",delta=f"{(r['undervalued']/r['price']-1)*100:.1f}%",delta_color="inverse")
+                    m6.metric("Zona Venta",f"{r['overvalued']:.2f}",delta=f"{(r['overvalued']/r['price']-1)*100:+.1f}%")
+
+                    st.markdown("")
+                    st.markdown("")
+                    st.markdown("")
+                    st.markdown("##### 🏆 Quality Score")
                     st.markdown("")
                     _quality(r['quality'])
                     if r['quality']['grade'] in ['D','F']: st.markdown('<div class="ins y">⚠️ <b>Quality bajo.</b> Puede no ser ideal para el método Weiss.</div>',unsafe_allow_html=True)
+
+                    st.markdown("")
+                    st.markdown("")
                     st.divider()
+                    st.markdown("")
+                    st.markdown("##### 📈 Análisis Detallado")
+                    st.markdown("")
                     tv,ty,tb,tp,td_=st.tabs(["📈 Valoración","📊 Yield","🔄 Backtest","💰 Proyección","📋 Historial"])
                     with tv:
+                        st.markdown("")
                         st.plotly_chart(ch_val(r['adf'],tk.upper()),use_container_width=True)
+                        st.markdown("")
                         c1,c2=st.columns(2)
                         c1.markdown('<div class="ins g"><b>🟢 Infravalorada</b> — Alto yield → barata históricamente → Considerar compra</div>',unsafe_allow_html=True)
                         c2.markdown('<div class="ins r"><b>🔴 Sobrevalorada</b> — Bajo yield → cara históricamente → Considerar venta</div>',unsafe_allow_html=True)
                     with ty:
+                        st.markdown("")
                         st.plotly_chart(ch_yield(r['adf'],tk.upper()),use_container_width=True)
+                        st.markdown("")
                         st.caption("P95 = zona compra · P5 = zona venta · Mediana = valor justo")
                     with tb:
+                        st.markdown("")
                         bt=r['bt']
                         if bt is None: st.info("Insuficientes señales para backtest.")
                         else:
-                            s=bt['stats']; b1,b2,b3,b4=st.columns(4)
-                            b1.metric("Trades",s['closed_trades']); b2.metric("Win Rate",f"{s['win_rate']:.0f}%"); b3.metric("Ret. Medio",f"{s['avg_return']:.1f}%"); b4.metric("Acumulado",f"{s['cumulative_return']:.1f}%")
+                            s=bt['stats']
+                            b1,b2,b3,b4=st.columns(4)
+                            b1.metric("Trades",s['closed_trades'])
+                            b2.metric("Win Rate",f"{s['win_rate']:.0f}%")
+                            b3.metric("Ret. Medio",f"{s['avg_return']:.1f}%")
+                            b4.metric("Acumulado",f"{s['cumulative_return']:.1f}%")
                             if s['open_trades']>0: st.caption(f"ℹ️ {s['open_trades']} pos. abierta(s)")
+                            st.markdown("")
                             f=ch_bt(r['adf'],bt,tk.upper())
                             if f: st.plotly_chart(f,use_container_width=True)
+                            st.markdown("")
                             with st.expander("📋 Detalle"):
                                 td__=bt['trades'].copy(); td__['entry_date']=td__['entry_date'].dt.strftime('%Y-%m-%d'); td__['exit_date']=td__['exit_date'].dt.strftime('%Y-%m-%d')
                                 for c in ['entry_price','exit_price','return_pct']: td__[c]=td__[c].round(2)
@@ -983,9 +986,17 @@ def main():
                     if fl: st.warning(f"Sin datos: {', '.join(fl)}")
                     if not res: st.error("Sin datos")
                     else:
-                        st.plotly_chart(ch_comp(res),use_container_width=True); st.divider()
+                        st.plotly_chart(ch_comp(res),use_container_width=True)
+
+                        st.markdown("")
+                        st.divider()
+                        st.markdown("##### 📋 Tabla Comparativa")
                         cdf=pd.DataFrame([{'Ticker':r['ticker'],'Precio':f"{r['price']:.2f}",'Yield':f"{r['yield']:.2f}%",'Señal':r['signal'],'Score':f"{r['score']:.1f}",'Quality':r['quality']['grade'],'CAGR':f"{r['cagr']:.1f}%"} for r in res]).sort_values('Score',ascending=False)
-                        st.dataframe(cdf,use_container_width=True,hide_index=True); st.divider()
+                        st.dataframe(cdf,use_container_width=True,hide_index=True)
+
+                        st.markdown("")
+                        st.divider()
+                        st.markdown("##### 🏆 Ranking")
                         c1,c2,c3=st.columns(3)
                         buy=sorted([r for r in res if 'COMPRA' in r['signal']],key=lambda x:x['score'],reverse=True); hold=[r for r in res if r['signal']=='MANTENER']; sell=sorted([r for r in res if 'VENTA' in r['signal']],key=lambda x:x['score'])
                         with c1:
@@ -1047,13 +1058,34 @@ def main():
                             ty=sum(r['yield']*r['pw']/100 for r in pr); tc=sum(r['cagr']*r['pw']/100 for r in pr); asc=sum(r['score']*r['pw']/100 for r in pr); aq=sum(r['quality']['total_score']*r['pw']/100 for r in pr)
                             ps='COMPRA' if asc>30 else 'VENTA' if asc<-30 else 'MANTENER'; cls='buy' if 'COMPRA' in ps else 'sell' if 'VENTA' in ps else 'hold'; pcm={"COMPRA":"var(--a)","VENTA":"var(--rd)","MANTENER":"var(--gd)"}
                             st.markdown(f'<div class="sig {cls}"><div class="sg"></div><div class="sl">Señal de cartera</div><div class="sv" style="color:{pcm[ps]}">{ps}</div><div class="ss">Score ponderado: {asc:.1f}</div></div>',unsafe_allow_html=True)
-                            m1,m2,m3=st.columns(3); m1.metric("Yield Pond.",f"{ty:.2f}%"); m2.metric("CAGR Pond.",f"{tc:.2f}%"); m3.metric("Score",f"{asc:.1f}")
-                            m4,m5,_=st.columns(3); m4.metric("Quality",f"{aq:.0f}/100"); m5.metric("Posiciones",len(pr))
+
+                            st.markdown("")
+                            st.markdown("##### 📊 Métricas de Cartera")
+                            st.markdown("")
+                            m1,m2,m3=st.columns(3)
+                            m1.metric("Yield Pond.",f"{ty:.2f}%")
+                            m2.metric("CAGR Pond.",f"{tc:.2f}%")
+                            m3.metric("Score",f"{asc:.1f}")
+                            st.markdown("")
+                            m4,m5,_=st.columns(3)
+                            m4.metric("Quality",f"{aq:.0f}/100")
+                            m5.metric("Posiciones",len(pr))
+
+                            st.markdown("")
                             st.divider()
+                            st.markdown("")
                             c1,c2=st.columns(2)
                             with c1: st.plotly_chart(ch_pie(pd__),use_container_width=True)
                             with c2: st.dataframe(pd.DataFrame([{'Ticker':r['ticker'],'Peso':f"{r['pw']:.1f}%",'Yield':f"{r['yield']:.2f}%",'Señal':r['signal'],'Q':r['quality']['grade'],'Score':f"{r['score']:.1f}"} for r in pr]),use_container_width=True,hide_index=True)
-                            st.divider(); st.plotly_chart(ch_port(portfolio_analysis(pr)),use_container_width=True); st.divider()
+
+                            st.markdown("")
+                            st.divider()
+                            st.markdown("##### 📈 Valoración Ponderada")
+                            st.plotly_chart(ch_port(portfolio_analysis(pr)),use_container_width=True)
+
+                            st.markdown("")
+                            st.divider()
+                            st.markdown("##### 💡 Rebalanceo")
                             bp=[r for r in pr if 'COMPRA' in r['signal']]; sp=[r for r in pr if 'VENTA' in r['signal']]; c1,c2=st.columns(2)
                             with c1:
                                 st.markdown('<div class="ins g"><b>🟢 Aumentar</b></div>',unsafe_allow_html=True)
