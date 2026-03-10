@@ -870,7 +870,7 @@ def ch_bars(dd):
 # ═══════════════════════════════════
 
 def main():
-    st.title("💎 Geraldine Weiss")
+    st.markdown('<h1 style="font-family:Outfit,sans-serif;font-size:3.2rem;font-weight:900;letter-spacing:-0.04em;margin:0;padding:0.5rem 0 0">💎 Geraldine Weiss</h1>', unsafe_allow_html=True)
     st.caption("Dividend Intelligence — Valoración profesional por rentabilidad de dividendos")
     st.divider()
 
