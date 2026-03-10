@@ -110,22 +110,37 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0, 230, 138, 0.1);
     }
 
-    /* === METRICS - hide default === */
-    div[data-testid="stMetricValue"] {
+    /* === METRICS === */
+    [data-testid="stMetricValue"] {
         font-family: 'JetBrains Mono', monospace !important;
-        font-size: 26px !important;
+        font-size: 24px !important;
         font-weight: 600 !important;
         color: var(--text-primary) !important;
     }
-    div[data-testid="stMetricLabel"] {
+    [data-testid="stMetricLabel"] {
         font-family: 'Outfit', sans-serif !important;
-        font-size: 12px !important;
+        font-size: 11px !important;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--text-secondary) !important;
+        letter-spacing: 0.08em;
+        color: var(--text-muted) !important;
     }
-    div[data-testid="stMetricDelta"] {
+    [data-testid="stMetricDelta"] {
         font-family: 'JetBrains Mono', monospace !important;
+        font-size: 12px !important;
+    }
+    /* Card container for metric widget */
+    [data-testid="stMetric"],
+    [data-testid="metric-container"] {
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border-subtle) !important;
+        border-radius: var(--radius-md) !important;
+        padding: 14px 16px !important;
+        transition: all 0.2s ease;
+    }
+    [data-testid="stMetric"]:hover,
+    [data-testid="metric-container"]:hover {
+        border-color: var(--border-light) !important;
+        background: var(--bg-card-hover) !important;
     }
 
     /* === BUTTONS === */
@@ -273,48 +288,7 @@ st.markdown("""
     .signal-card.sell .signal-glow { background: #ef4444; }
     .signal-card.hold .signal-glow { background: #f0b429; }
 
-    /* Metric Cards */
-    .metric-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 12px;
-        margin: 16px 0;
-    }
-    .metric-card {
-        background: var(--bg-card);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-md);
-        padding: 16px 18px;
-        transition: all 0.2s ease;
-    }
-    .metric-card:hover {
-        border-color: var(--border-light);
-        background: var(--bg-card-hover);
-    }
-    .metric-card .mc-label {
-        font-family: 'Outfit', sans-serif;
-        font-size: 11px;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--text-muted);
-        margin-bottom: 6px;
-    }
-    .metric-card .mc-value {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: var(--text-primary);
-        line-height: 1.2;
-    }
-    .metric-card .mc-delta {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.75rem;
-        margin-top: 4px;
-    }
-    .mc-delta.positive { color: var(--accent-emerald); }
-    .mc-delta.negative { color: var(--accent-red); }
-    .mc-delta.neutral { color: var(--accent-gold); }
+    /* Metric cards now use native st.metric with CSS above */
 
     /* Quality Gauge */
     .quality-display {
@@ -620,8 +594,15 @@ class GeraldineWeissAnalyzer:
         if m.empty or len(m) < 10: return None
         mx, mn = m['div_yield'].quantile(0.95), m['div_yield'].quantile(0.05)
         if mx <= 0 or mn <= 0 or mx <= mn: return None
-        m['undervalued'] = (m['div_yield'] / mx) * m['Close']
-        m['overvalued'] = (m['div_yield'] / mn) * m['Close']
+        m['undervalued_raw'] = (m['div_yield'] / mx) * m['Close']
+        m['overvalued_raw'] = (m['div_yield'] / mn) * m['Close']
+        # Suavizar bandas con rolling median para eliminar picos por saltos discretos del TTM
+        window = min(21, max(5, len(m) // 50))  # ventana adaptativa
+        m['undervalued'] = m['undervalued_raw'].rolling(window=window, center=True, min_periods=1).median()
+        m['overvalued'] = m['overvalued_raw'].rolling(window=window, center=True, min_periods=1).median()
+        # Segunda pasada EWM para suavizado extra
+        m['undervalued'] = m['undervalued'].ewm(span=window, adjust=False).mean()
+        m['overvalued'] = m['overvalued'].ewm(span=window, adjust=False).mean()
         m.attrs['max_yield'] = mx; m.attrs['min_yield'] = mn; m.attrs['median_yield'] = ym
         return m
 
@@ -816,24 +797,26 @@ def render_signal(signal, price, description):
         <div class="signal-glow"></div>
         <div class="signal-label">Señal de valoración</div>
         <div class="signal-value" style="color:{c}">{signal}</div>
-        <div class="signal-price">${price:.2f} — {description}</div>
+        <div class="signal-price">&#36;{price:.2f} — {description}</div>
     </div>""", unsafe_allow_html=True)
 
 
 def render_metrics(items):
-    """items: list of dicts {label, value, delta, delta_type}"""
-    cards = ""
-    for it in items:
-        delta_html = ""
-        if 'delta' in it and it['delta']:
-            dt = it.get('delta_type','neutral')
-            delta_html = f'<div class="mc-delta {dt}">{it["delta"]}</div>'
-        cards += f"""<div class="metric-card">
-            <div class="mc-label">{it['label']}</div>
-            <div class="mc-value">{it['value']}</div>
-            {delta_html}
-        </div>"""
-    st.markdown(f'<div class="metric-row">{cards}</div>', unsafe_allow_html=True)
+    """Render metrics using native st.columns + st.metric for guaranteed rendering"""
+    cols = st.columns(len(items))
+    for i, it in enumerate(items):
+        label = it['label']
+        value = str(it['value']).replace('$', '')  # st.metric handles display
+        delta = it.get('delta')
+        # st.metric delta_color: "normal" = green up / red down, "inverse" = opposite, "off" = grey
+        delta_color = "off"
+        if delta:
+            dt = it.get('delta_type', 'neutral')
+            if dt == 'positive':
+                delta_color = "normal"
+            elif dt == 'negative':
+                delta_color = "inverse"
+        cols[i].metric(label=label, value=value, delta=delta, delta_color=delta_color)
 
 
 def render_badges(source, confidence_level, confidence_label):
@@ -884,12 +867,12 @@ def render_projection(proj, investment=10000):
         yr = "Hoy" if p['year']==0 else f"Año {p['year']}"
         items += f"""<div class="projection-item">
             <div class="pi-year">{yr}</div>
-            <div class="pi-value">${p['income']:.0f}</div>
+            <div class="pi-value">&#36;{p['income']:.0f}</div>
             <div class="pi-yield">YoC {p['yoc']:.2f}%</div>
         </div>"""
     st.markdown(f"""
     <div style="font-family:'Outfit',sans-serif;font-size:13px;color:var(--text-secondary);margin-bottom:8px">
-        Proyección de ingresos anuales por dividendos · Inversión: ${investment:,.0f}
+        Proyección de ingresos anuales por dividendos · Inversión: &#36;{investment:,.0f}
     </div>
     <div class="projection-grid">{items}</div>""", unsafe_allow_html=True)
 
