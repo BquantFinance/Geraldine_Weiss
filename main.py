@@ -55,6 +55,11 @@ st.markdown("""
         font-weight: 700 !important;
         letter-spacing: -0.025em;
     }
+    h1 {
+        font-size: 2.4rem !important;
+        font-weight: 900 !important;
+        letter-spacing: -0.035em;
+    }
     p, li, span { font-size: 14px; }
     hr {
         border-color: var(--br) !important;
@@ -126,9 +131,12 @@ st.markdown("""
         background: linear-gradient(145deg, var(--b3), var(--b2)) !important;
         border: 1px solid var(--br2) !important;
         border-radius: var(--r) !important;
-        padding: 20px 18px !important;
+        padding: 18px !important;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-        min-height: 100px;
+        height: 110px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
     /* Force equal-width metric columns */
     [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
@@ -862,7 +870,7 @@ def ch_bars(dd):
 # ═══════════════════════════════════
 
 def main():
-    st.markdown("## 💎 Geraldine Weiss")
+    st.title("💎 Geraldine Weiss")
     st.caption("Dividend Intelligence — Valoración profesional por rentabilidad de dividendos")
     st.divider()
 
