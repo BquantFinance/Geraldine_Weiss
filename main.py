@@ -862,242 +862,301 @@ def ch_bars(dd):
 # ═══════════════════════════════════
 
 def main():
-    _hero()
-    t1,t2,t3=st.tabs(["🎯  Análisis Individual","📊  Comparación","💼  Cartera"])
+    st.markdown("## 💎 Geraldine Weiss")
+    st.caption("Dividend Intelligence — Valoración profesional por rentabilidad de dividendos")
+    st.divider()
 
+    t1, t2, t3 = st.tabs(["🎯  Análisis Individual", "📊  Comparación", "💼  Cartera"])
+
+    # ─── TAB 1: Individual ───
     with t1:
-        cs,cm=st.columns([1,3])
-        with cs:
-            st.markdown("##### ⚙️ Configuración")
-            tk=st.text_input("Ticker",value="KO"); yr=st.slider("Período (años)",3,10,6)
-            st.divider()
-            go_=st.button("🔍  Analizar",type="primary",use_container_width=True)
-            st.divider()
-            with st.expander("💡 Método Weiss"):
-                st.caption("**Alto yield** → Infravalorada → Compra\n\n**Bajo yield** → Sobrevalorada → Venta\n\nUsa TTM (trailing 12m) para precisión real.")
-            st.divider()
-            st.caption("🇺🇸 KO · JNJ · PG · MMM · XOM")
-            st.caption("🇪🇸 IBE.MC · SAN.MC · TEF.MC")
-            st.caption("🇬🇧 BP.L · ULVR.L · 🇨🇦 RY.TO")
+        cfg1, cfg2, cfg3 = st.columns([2, 2, 1])
+        with cfg1:
+            tk = st.text_input("Ticker", value="KO")
+        with cfg2:
+            yr = st.slider("Período (años)", 3, 10, 6)
+        with cfg3:
+            st.markdown("")
+            st.markdown("")
+            go_ = st.button("🔍  Analizar", type="primary", use_container_width=True)
 
-        with cm:
-            if go_ and tk:
-                with st.spinner('Analizando...'):
-                    r=analyze(tk.upper(),yr)
-                if r is None:
-                    st.error(f"Sin datos para **{tk.upper()}**. Verifica ticker o dividendos.")
-                else:
-                    _badges(r['src'],r['conf'],r['conf_label'])
-                    _signal(r['signal'],r['price'],r['desc'])
+        with st.expander("💡 Método Weiss · Tickers sugeridos"):
+            st.caption("**Alto yield** → Infravalorada → Compra · **Bajo yield** → Sobrevalorada → Venta · TTM (trailing 12m)")
+            st.caption("🇺🇸 KO · JNJ · PG · MMM · XOM  ·  🇪🇸 IBE.MC · SAN.MC  ·  🇬🇧 BP.L · ULVR.L  ·  🇨🇦 RY.TO")
 
-                    st.markdown("")
-                    st.markdown("")
-                    st.markdown("##### 📊 Métricas Clave")
-                    st.markdown("")
-                    m1,m2,m3=st.columns(3)
-                    m1.metric("Precio",f"{r['price']:.2f}")
-                    m2.metric("Yield TTM",f"{r['yield']:.2f}%")
-                    m3.metric("CAGR Div.",f"{r['cagr']:.1f}%",delta="crecimiento anual" if r['cagr']>0 else "decrecimiento",delta_color="normal" if r['cagr']>0 else "inverse")
-                    st.markdown("")
-                    m4,m5,m6=st.columns(3)
-                    m4.metric("Dividendo TTM",f"{r['ttm_dividend']:.3f}")
-                    m5.metric("Zona Compra",f"{r['undervalued']:.2f}",delta=f"{(r['undervalued']/r['price']-1)*100:.1f}%",delta_color="inverse")
-                    m6.metric("Zona Venta",f"{r['overvalued']:.2f}",delta=f"{(r['overvalued']/r['price']-1)*100:+.1f}%")
-
-                    st.markdown("")
-                    st.markdown("")
-                    st.markdown("")
-                    st.markdown("##### 🏆 Quality Score")
-                    st.markdown("")
-                    _quality(r['quality'])
-                    if r['quality']['grade'] in ['D','F']: st.markdown('<div class="ins y">⚠️ <b>Quality bajo.</b> Puede no ser ideal para el método Weiss.</div>',unsafe_allow_html=True)
-
-                    st.markdown("")
-                    st.markdown("")
-                    st.divider()
-                    st.markdown("")
-                    st.markdown("##### 📈 Análisis Detallado")
-                    st.markdown("")
-                    tv,ty,tb,tp,td_=st.tabs(["📈 Valoración","📊 Yield","🔄 Backtest","💰 Proyección","📋 Historial"])
-                    with tv:
-                        st.markdown("")
-                        st.plotly_chart(ch_val(r['adf'],tk.upper()),use_container_width=True)
-                        st.markdown("")
-                        c1,c2=st.columns(2)
-                        c1.markdown('<div class="ins g"><b>🟢 Infravalorada</b> — Alto yield → barata históricamente → Considerar compra</div>',unsafe_allow_html=True)
-                        c2.markdown('<div class="ins r"><b>🔴 Sobrevalorada</b> — Bajo yield → cara históricamente → Considerar venta</div>',unsafe_allow_html=True)
-                    with ty:
-                        st.markdown("")
-                        st.plotly_chart(ch_yield(r['adf'],tk.upper()),use_container_width=True)
-                        st.markdown("")
-                        st.caption("P95 = zona compra · P5 = zona venta · Mediana = valor justo")
-                    with tb:
-                        st.markdown("")
-                        bt=r['bt']
-                        if bt is None: st.info("Insuficientes señales para backtest.")
-                        else:
-                            s=bt['stats']
-                            b1,b2,b3,b4=st.columns(4)
-                            b1.metric("Trades",s['closed_trades'])
-                            b2.metric("Win Rate",f"{s['win_rate']:.0f}%")
-                            b3.metric("Ret. Medio",f"{s['avg_return']:.1f}%")
-                            b4.metric("Acumulado",f"{s['cumulative_return']:.1f}%")
-                            if s['open_trades']>0: st.caption(f"ℹ️ {s['open_trades']} pos. abierta(s)")
-                            st.markdown("")
-                            f=ch_bt(r['adf'],bt,tk.upper())
-                            if f: st.plotly_chart(f,use_container_width=True)
-                            st.markdown("")
-                            with st.expander("📋 Detalle"):
-                                td__=bt['trades'].copy(); td__['entry_date']=td__['entry_date'].dt.strftime('%Y-%m-%d'); td__['exit_date']=td__['exit_date'].dt.strftime('%Y-%m-%d')
-                                for c in ['entry_price','exit_price','return_pct']: td__[c]=td__[c].round(2)
-                                td__=td__[[c for c in ['entry_date','entry_price','exit_date','exit_price','return_pct','holding_days'] if c in td__.columns]]
-                                td__.columns=['Compra','Precio C.','Venta','Precio V.','Ret %','Días']
-                                st.dataframe(td__,use_container_width=True,hide_index=True)
-                            st.markdown('<div class="disc">⚠️ Backtest simplificado. Sin comisiones ni dividendos reinvertidos.</div>',unsafe_allow_html=True)
-                    with tp:
-                        inv=st.number_input("Inversión inicial",min_value=1000,max_value=1000000,value=10000,step=1000)
-                        proj=GeraldineWeissAnalyzer(tk.upper(),yr).project_dividend_income(r['ttm_dividend'],r['cagr'],r['price'],inv)
-                        if proj: _projection(proj,inv)
-                        st.markdown('<div class="disc">Proyección basada en CAGR histórico. No garantiza rendimiento.</div>',unsafe_allow_html=True)
-                    with td_:
-                        dd=r['dd'].copy().sort_values('ex_dividend_date',ascending=False)
-                        st.plotly_chart(ch_bars(dd),use_container_width=True)
-                        ds=dd[['ex_dividend_date','amount']].copy(); ds['ex_dividend_date']=ds['ex_dividend_date'].dt.strftime('%Y-%m-%d'); ds['amount']=ds['amount'].round(4)
-                        ds.columns=['Fecha Ex-Div','Importe']; st.dataframe(ds,use_container_width=True,hide_index=True,height=300)
+        if go_ and tk:
+            with st.spinner('Analizando...'):
+                r = analyze(tk.upper(), yr)
+            if r is None:
+                st.error(f"Sin datos para **{tk.upper()}**. Verifica ticker o dividendos.")
             else:
-                st.markdown('<div class="mt"><div class="mi">💎</div><div class="mh">Selecciona un ticker</div><div class="ms">Introduce un símbolo y pulsa Analizar para obtener valoración, quality score, backtest y proyección.</div></div>',unsafe_allow_html=True)
+                st.divider()
+                _badges(r['src'], r['conf'], r['conf_label'])
 
+                # Signal left + Metrics right — compact side-by-side
+                sig_col, met_col = st.columns([1, 2])
+                with sig_col:
+                    _signal(r['signal'], r['price'], r['desc'])
+                with met_col:
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Precio", f"{r['price']:.2f}")
+                    m2.metric("Yield TTM", f"{r['yield']:.2f}%")
+                    m3.metric("CAGR Div.", f"{r['cagr']:.1f}%", delta="crecimiento" if r['cagr'] > 0 else "decrecimiento", delta_color="normal" if r['cagr'] > 0 else "inverse")
+                    m4, m5, m6 = st.columns(3)
+                    m4.metric("Div. TTM", f"{r['ttm_dividend']:.3f}")
+                    m5.metric("Zona Compra", f"{r['undervalued']:.2f}", delta=f"{(r['undervalued']/r['price']-1)*100:.1f}%", delta_color="inverse")
+                    m6.metric("Zona Venta", f"{r['overvalued']:.2f}", delta=f"{(r['overvalued']/r['price']-1)*100:+.1f}%")
+
+                _quality(r['quality'])
+                if r['quality']['grade'] in ['D', 'F']:
+                    st.markdown('<div class="ins y">⚠️ <b>Quality bajo.</b> Puede no ser ideal para el método Weiss.</div>', unsafe_allow_html=True)
+
+                st.divider()
+                tv, ty, tb, tp, td_ = st.tabs(["📈 Valoración", "📊 Yield", "🔄 Backtest", "💰 Proyección", "📋 Historial"])
+
+                with tv:
+                    st.plotly_chart(ch_val(r['adf'], tk.upper()), use_container_width=True)
+                    c1, c2 = st.columns(2)
+                    c1.markdown('<div class="ins g"><b>🟢 Infravalorada</b> — Alto yield → considerar compra</div>', unsafe_allow_html=True)
+                    c2.markdown('<div class="ins r"><b>🔴 Sobrevalorada</b> — Bajo yield → considerar venta</div>', unsafe_allow_html=True)
+
+                with ty:
+                    st.plotly_chart(ch_yield(r['adf'], tk.upper()), use_container_width=True)
+                    st.caption("P95 = zona compra · P5 = zona venta · Mediana = valor justo")
+
+                with tb:
+                    bt = r['bt']
+                    if bt is None:
+                        st.info("Insuficientes señales para backtest.")
+                    else:
+                        s = bt['stats']
+                        b1, b2, b3, b4 = st.columns(4)
+                        b1.metric("Trades", s['closed_trades'])
+                        b2.metric("Win Rate", f"{s['win_rate']:.0f}%")
+                        b3.metric("Ret. Medio", f"{s['avg_return']:.1f}%")
+                        b4.metric("Acumulado", f"{s['cumulative_return']:.1f}%")
+                        if s['open_trades'] > 0:
+                            st.caption(f"ℹ️ {s['open_trades']} pos. abierta(s)")
+                        f = ch_bt(r['adf'], bt, tk.upper())
+                        if f:
+                            st.plotly_chart(f, use_container_width=True)
+                        with st.expander("📋 Detalle de operaciones"):
+                            td__ = bt['trades'].copy()
+                            td__['entry_date'] = td__['entry_date'].dt.strftime('%Y-%m-%d')
+                            td__['exit_date'] = td__['exit_date'].dt.strftime('%Y-%m-%d')
+                            for c in ['entry_price', 'exit_price', 'return_pct']:
+                                td__[c] = td__[c].round(2)
+                            td__ = td__[[c for c in ['entry_date', 'entry_price', 'exit_date', 'exit_price', 'return_pct', 'holding_days'] if c in td__.columns]]
+                            td__.columns = ['Compra', 'Precio C.', 'Venta', 'Precio V.', 'Ret %', 'Días']
+                            st.dataframe(td__, use_container_width=True, hide_index=True)
+                        st.markdown('<div class="disc">⚠️ Backtest simplificado. Sin comisiones ni dividendos reinvertidos.</div>', unsafe_allow_html=True)
+
+                with tp:
+                    inv = st.number_input("Inversión inicial", min_value=1000, max_value=1000000, value=10000, step=1000)
+                    proj = GeraldineWeissAnalyzer(tk.upper(), yr).project_dividend_income(r['ttm_dividend'], r['cagr'], r['price'], inv)
+                    if proj:
+                        _projection(proj, inv)
+                    st.markdown('<div class="disc">Proyección basada en CAGR histórico. No garantiza rendimiento.</div>', unsafe_allow_html=True)
+
+                with td_:
+                    dd = r['dd'].copy().sort_values('ex_dividend_date', ascending=False)
+                    st.plotly_chart(ch_bars(dd), use_container_width=True)
+                    ds = dd[['ex_dividend_date', 'amount']].copy()
+                    ds['ex_dividend_date'] = ds['ex_dividend_date'].dt.strftime('%Y-%m-%d')
+                    ds['amount'] = ds['amount'].round(4)
+                    ds.columns = ['Fecha Ex-Div', 'Importe']
+                    st.dataframe(ds, use_container_width=True, hide_index=True, height=300)
+        else:
+            st.markdown('<div class="mt"><div class="mi">💎</div><div class="mh">Selecciona un ticker y pulsa Analizar</div><div class="ms">Valoración por dividendos, quality score, backtest y proyección de ingresos.</div></div>', unsafe_allow_html=True)
+
+    # ─── TAB 2: Comparación ───
     with t2:
-        st.markdown("##### 📊 Comparación")
-        c1,c2=st.columns([2,1])
-        with c1: ti=st.text_input("Tickers (comas)",value="KO, PG, JNJ, PEP")
-        with c2: yc=st.selectbox("Período",[3,5,6,10],index=2); cb=st.button("🔍 Comparar",type="primary",use_container_width=True)
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            ti = st.text_input("Tickers (separados por comas)", value="KO, PG, JNJ, PEP")
+        with c2:
+            yc = st.selectbox("Período", [3, 5, 6, 10], index=2)
+            cb = st.button("🔍 Comparar", type="primary", use_container_width=True)
+
         if cb:
-            tl=[t.strip().upper() for t in ti.split(',') if t.strip()][:6]
-            if len(tl)<2: st.error("Mínimo 2 tickers")
+            tl = [t.strip().upper() for t in ti.split(',') if t.strip()][:6]
+            if len(tl) < 2:
+                st.error("Mínimo 2 tickers")
             else:
                 with st.spinner(f'{len(tl)} tickers...'):
-                    res=[];pb=st.progress(0)
-                    for i,t in enumerate(tl):
-                        r=analyze(t,yc)
-                        if r: res.append(r)
-                        pb.progress((i+1)/len(tl))
-                    pb.empty(); fl=[t for t in tl if t not in [r['ticker'] for r in res]]
-                    if fl: st.warning(f"Sin datos: {', '.join(fl)}")
-                    if not res: st.error("Sin datos")
+                    res = []
+                    pb = st.progress(0)
+                    for i, t in enumerate(tl):
+                        r = analyze(t, yc)
+                        if r:
+                            res.append(r)
+                        pb.progress((i + 1) / len(tl))
+                    pb.empty()
+                    fl = [t for t in tl if t not in [r['ticker'] for r in res]]
+                    if fl:
+                        st.warning(f"Sin datos: {', '.join(fl)}")
+                    if not res:
+                        st.error("Sin datos")
                     else:
-                        st.plotly_chart(ch_comp(res),use_container_width=True)
-
-                        st.markdown("")
+                        st.plotly_chart(ch_comp(res), use_container_width=True)
                         st.divider()
-                        st.markdown("##### 📋 Tabla Comparativa")
-                        cdf=pd.DataFrame([{'Ticker':r['ticker'],'Precio':f"{r['price']:.2f}",'Yield':f"{r['yield']:.2f}%",'Señal':r['signal'],'Score':f"{r['score']:.1f}",'Quality':r['quality']['grade'],'CAGR':f"{r['cagr']:.1f}%"} for r in res]).sort_values('Score',ascending=False)
-                        st.dataframe(cdf,use_container_width=True,hide_index=True)
-
-                        st.markdown("")
+                        cdf = pd.DataFrame([{
+                            'Ticker': r['ticker'], 'Precio': f"{r['price']:.2f}",
+                            'Yield': f"{r['yield']:.2f}%", 'Señal': r['signal'],
+                            'Score': f"{r['score']:.1f}", 'Quality': r['quality']['grade'],
+                            'CAGR': f"{r['cagr']:.1f}%"
+                        } for r in res]).sort_values('Score', ascending=False)
+                        st.dataframe(cdf, use_container_width=True, hide_index=True)
                         st.divider()
-                        st.markdown("##### 🏆 Ranking")
-                        c1,c2,c3=st.columns(3)
-                        buy=sorted([r for r in res if 'COMPRA' in r['signal']],key=lambda x:x['score'],reverse=True); hold=[r for r in res if r['signal']=='MANTENER']; sell=sorted([r for r in res if 'VENTA' in r['signal']],key=lambda x:x['score'])
+                        c1, c2, c3 = st.columns(3)
+                        buy = sorted([r for r in res if 'COMPRA' in r['signal']], key=lambda x: x['score'], reverse=True)
+                        hold = [r for r in res if r['signal'] == 'MANTENER']
+                        sell = sorted([r for r in res if 'VENTA' in r['signal']], key=lambda x: x['score'])
                         with c1:
-                            st.markdown('<div class="ins g"><b>🟢 Compra</b></div>',unsafe_allow_html=True)
-                            for r in buy[:3]: st.caption(f"**{r['ticker']}** ({r['quality']['grade']}) — Score {r['score']:.0f}")
-                            if not buy: st.caption("—")
+                            st.markdown('<div class="ins g"><b>🟢 Compra</b></div>', unsafe_allow_html=True)
+                            for r in buy[:3]:
+                                st.caption(f"**{r['ticker']}** ({r['quality']['grade']}) — Score {r['score']:.0f}")
+                            if not buy:
+                                st.caption("—")
                         with c2:
-                            st.markdown('<div class="ins y"><b>🟡 Mantener</b></div>',unsafe_allow_html=True)
-                            for r in hold[:3]: st.caption(f"**{r['ticker']}** ({r['quality']['grade']})")
-                            if not hold: st.caption("—")
+                            st.markdown('<div class="ins y"><b>🟡 Mantener</b></div>', unsafe_allow_html=True)
+                            for r in hold[:3]:
+                                st.caption(f"**{r['ticker']}** ({r['quality']['grade']})")
+                            if not hold:
+                                st.caption("—")
                         with c3:
-                            st.markdown('<div class="ins r"><b>🔴 Venta</b></div>',unsafe_allow_html=True)
-                            for r in sell[:3]: st.caption(f"**{r['ticker']}** ({r['quality']['grade']}) — Score {r['score']:.0f}")
-                            if not sell: st.caption("—")
+                            st.markdown('<div class="ins r"><b>🔴 Venta</b></div>', unsafe_allow_html=True)
+                            for r in sell[:3]:
+                                st.caption(f"**{r['ticker']}** ({r['quality']['grade']}) — Score {r['score']:.0f}")
+                            if not sell:
+                                st.caption("—")
 
+    # ─── TAB 3: Cartera ───
     with t3:
-        st.markdown("##### 💼 Cartera Ponderada")
-        if 'pf' not in st.session_state: st.session_state.pf=pd.DataFrame(columns=['ticker','weight'])
-        c1,c2=st.columns([2,1])
+        if 'pf' not in st.session_state:
+            st.session_state.pf = pd.DataFrame(columns=['ticker', 'weight'])
+
+        c1, c2 = st.columns([2, 1])
         with c1:
-            ca,cb,cc=st.columns([2,1,1])
-            with ca: nt=st.text_input("Ticker",key="pt")
-            with cb: nw=st.number_input("Peso %",0.0,100.0,10.0,5.0,key="pw")
+            ca, cb, cc = st.columns([2, 1, 1])
+            with ca:
+                nt = st.text_input("Ticker", key="pt")
+            with cb:
+                nw = st.number_input("Peso %", 0.0, 100.0, 10.0, 5.0, key="pw")
             with cc:
-                st.write(""); st.write("")
-                if st.button("➕",use_container_width=True):
-                    if nt: st.session_state.pf=pd.concat([st.session_state.pf,pd.DataFrame([{'ticker':nt.upper(),'weight':nw}])],ignore_index=True); st.rerun()
+                st.write("")
+                st.write("")
+                if st.button("➕", use_container_width=True):
+                    if nt:
+                        st.session_state.pf = pd.concat([st.session_state.pf, pd.DataFrame([{'ticker': nt.upper(), 'weight': nw}])], ignore_index=True)
+                        st.rerun()
         with c2:
-            cc1,cc2=st.columns(2)
+            cc1, cc2 = st.columns(2)
             with cc1:
-                if st.button("🗑️ Limpiar",use_container_width=True): st.session_state.pf=pd.DataFrame(columns=['ticker','weight']); st.rerun()
+                if st.button("🗑️ Limpiar", use_container_width=True):
+                    st.session_state.pf = pd.DataFrame(columns=['ticker', 'weight'])
+                    st.rerun()
             with cc2:
-                if st.button("📋 Demo",use_container_width=True): st.session_state.pf=pd.DataFrame([{'ticker':'KO','weight':25},{'ticker':'JNJ','weight':25},{'ticker':'PG','weight':25},{'ticker':'PEP','weight':25}]); st.rerun()
-            if not st.session_state.pf.empty: st.download_button("💾 Guardar",p2j(st.session_state.pf),"cartera.json","application/json",use_container_width=True)
-            uf=st.file_uploader("📂 Cargar",type=['json'],key="pu",label_visibility="collapsed")
+                if st.button("📋 Demo", use_container_width=True):
+                    st.session_state.pf = pd.DataFrame([{'ticker': 'KO', 'weight': 25}, {'ticker': 'JNJ', 'weight': 25}, {'ticker': 'PG', 'weight': 25}, {'ticker': 'PEP', 'weight': 25}])
+                    st.rerun()
+            if not st.session_state.pf.empty:
+                st.download_button("💾 Guardar", p2j(st.session_state.pf), "cartera.json", "application/json", use_container_width=True)
+            uf = st.file_uploader("📂 Cargar", type=['json'], key="pu", label_visibility="collapsed")
             if uf:
-                ld=j2p(uf.read().decode('utf-8'))
-                if ld is not None: st.session_state.pf=ld; st.rerun()
+                ld = j2p(uf.read().decode('utf-8'))
+                if ld is not None:
+                    st.session_state.pf = ld
+                    st.rerun()
+
         st.divider()
+
         if not st.session_state.pf.empty:
-            edf=st.data_editor(st.session_state.pf,use_container_width=True,hide_index=True,num_rows="dynamic")
-            edf=edf.dropna(subset=['ticker']); edf=edf[edf['ticker'].astype(str).str.strip()!='']; edf['weight']=pd.to_numeric(edf['weight'],errors='coerce').fillna(0); edf=edf[edf['weight']>0]; st.session_state.pf=edf.reset_index(drop=True)
+            edf = st.data_editor(st.session_state.pf, use_container_width=True, hide_index=True, num_rows="dynamic")
+            edf = edf.dropna(subset=['ticker'])
+            edf = edf[edf['ticker'].astype(str).str.strip() != '']
+            edf['weight'] = pd.to_numeric(edf['weight'], errors='coerce').fillna(0)
+            edf = edf[edf['weight'] > 0]
+            st.session_state.pf = edf.reset_index(drop=True)
             st.divider()
-            if st.button("🔍 Analizar Cartera",type="primary",use_container_width=True):
+
+            if st.button("🔍 Analizar Cartera", type="primary", use_container_width=True):
                 with st.spinner('Analizando...'):
-                    pd__=st.session_state.pf.copy()
-                    if pd__.empty: st.error("Vacía")
+                    pd__ = st.session_state.pf.copy()
+                    if pd__.empty:
+                        st.error("Vacía")
                     else:
-                        pd__['weight']=(pd__['weight']/pd__['weight'].sum())*100; pr=[];fl=[];pb=st.progress(0)
-                        for i,row in pd__.iterrows():
-                            r=analyze(row['ticker'],6)
-                            if r: r['pw']=row['weight'];pr.append(r)
-                            else: fl.append(row['ticker'])
-                            pb.progress((i+1)/len(pd__))
+                        pd__['weight'] = (pd__['weight'] / pd__['weight'].sum()) * 100
+                        pr = []
+                        fl = []
+                        pb = st.progress(0)
+                        for i, row in pd__.iterrows():
+                            r = analyze(row['ticker'], 6)
+                            if r:
+                                r['pw'] = row['weight']
+                                pr.append(r)
+                            else:
+                                fl.append(row['ticker'])
+                            pb.progress((i + 1) / len(pd__))
                         pb.empty()
-                        if fl: st.warning(f"Sin datos: {', '.join(fl)}")
-                        if not pr: st.error("Sin datos")
+                        if fl:
+                            st.warning(f"Sin datos: {', '.join(fl)}")
+                        if not pr:
+                            st.error("Sin datos")
                         else:
-                            ty=sum(r['yield']*r['pw']/100 for r in pr); tc=sum(r['cagr']*r['pw']/100 for r in pr); asc=sum(r['score']*r['pw']/100 for r in pr); aq=sum(r['quality']['total_score']*r['pw']/100 for r in pr)
-                            ps='COMPRA' if asc>30 else 'VENTA' if asc<-30 else 'MANTENER'; cls='buy' if 'COMPRA' in ps else 'sell' if 'VENTA' in ps else 'hold'; pcm={"COMPRA":"var(--a)","VENTA":"var(--rd)","MANTENER":"var(--gd)"}
-                            st.markdown(f'<div class="sig {cls}"><div class="sg"></div><div class="sl">Señal de cartera</div><div class="sv" style="color:{pcm[ps]}">{ps}</div><div class="ss">Score ponderado: {asc:.1f}</div></div>',unsafe_allow_html=True)
+                            ty = sum(r['yield'] * r['pw'] / 100 for r in pr)
+                            tc = sum(r['cagr'] * r['pw'] / 100 for r in pr)
+                            asc = sum(r['score'] * r['pw'] / 100 for r in pr)
+                            aq = sum(r['quality']['total_score'] * r['pw'] / 100 for r in pr)
+                            ps = 'COMPRA' if asc > 30 else 'VENTA' if asc < -30 else 'MANTENER'
+                            cls = 'buy' if 'COMPRA' in ps else 'sell' if 'VENTA' in ps else 'hold'
+                            pcm = {"COMPRA": "var(--a)", "VENTA": "var(--rd)", "MANTENER": "var(--gd)"}
+                            st.markdown(f'<div class="sig {cls}"><div class="sg"></div><div class="sl">Señal de cartera</div><div class="sv" style="color:{pcm[ps]}">{ps}</div><div class="ss">Score ponderado: {asc:.1f}</div></div>', unsafe_allow_html=True)
 
-                            st.markdown("")
-                            st.markdown("##### 📊 Métricas de Cartera")
-                            st.markdown("")
-                            m1,m2,m3=st.columns(3)
-                            m1.metric("Yield Pond.",f"{ty:.2f}%")
-                            m2.metric("CAGR Pond.",f"{tc:.2f}%")
-                            m3.metric("Score",f"{asc:.1f}")
-                            st.markdown("")
-                            m4,m5,_=st.columns(3)
-                            m4.metric("Quality",f"{aq:.0f}/100")
-                            m5.metric("Posiciones",len(pr))
+                            m1, m2, m3 = st.columns(3)
+                            m1.metric("Yield Pond.", f"{ty:.2f}%")
+                            m2.metric("CAGR Pond.", f"{tc:.2f}%")
+                            m3.metric("Score", f"{asc:.1f}")
+                            m4, m5, _ = st.columns(3)
+                            m4.metric("Quality", f"{aq:.0f}/100")
+                            m5.metric("Posiciones", len(pr))
 
-                            st.markdown("")
                             st.divider()
-                            st.markdown("")
-                            c1,c2=st.columns(2)
-                            with c1: st.plotly_chart(ch_pie(pd__),use_container_width=True)
-                            with c2: st.dataframe(pd.DataFrame([{'Ticker':r['ticker'],'Peso':f"{r['pw']:.1f}%",'Yield':f"{r['yield']:.2f}%",'Señal':r['signal'],'Q':r['quality']['grade'],'Score':f"{r['score']:.1f}"} for r in pr]),use_container_width=True,hide_index=True)
-
-                            st.markdown("")
-                            st.divider()
-                            st.markdown("##### 📈 Valoración Ponderada")
-                            st.plotly_chart(ch_port(portfolio_analysis(pr)),use_container_width=True)
-
-                            st.markdown("")
-                            st.divider()
-                            st.markdown("##### 💡 Rebalanceo")
-                            bp=[r for r in pr if 'COMPRA' in r['signal']]; sp=[r for r in pr if 'VENTA' in r['signal']]; c1,c2=st.columns(2)
+                            c1, c2 = st.columns(2)
                             with c1:
-                                st.markdown('<div class="ins g"><b>🟢 Aumentar</b></div>',unsafe_allow_html=True)
-                                for r in bp: st.caption(f"**{r['ticker']}** ({r['pw']:.0f}%) — {r['signal']} [{r['quality']['grade']}]")
-                                if not bp: st.caption("—")
+                                st.plotly_chart(ch_pie(pd__), use_container_width=True)
                             with c2:
-                                st.markdown('<div class="ins r"><b>🔴 Reducir</b></div>',unsafe_allow_html=True)
-                                for r in sp: st.caption(f"**{r['ticker']}** ({r['pw']:.0f}%) — {r['signal']} [{r['quality']['grade']}]")
-                                if not sp: st.caption("—")
+                                det = pd.DataFrame([{
+                                    'Ticker': r['ticker'], 'Peso': f"{r['pw']:.1f}%",
+                                    'Yield': f"{r['yield']:.2f}%", 'Señal': r['signal'],
+                                    'Q': r['quality']['grade'], 'Score': f"{r['score']:.1f}"
+                                } for r in pr])
+                                st.dataframe(det, use_container_width=True, hide_index=True)
+
+                            st.divider()
+                            st.plotly_chart(ch_port(portfolio_analysis(pr)), use_container_width=True)
+
+                            st.divider()
+                            bp = [r for r in pr if 'COMPRA' in r['signal']]
+                            sp = [r for r in pr if 'VENTA' in r['signal']]
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                st.markdown('<div class="ins g"><b>🟢 Aumentar</b></div>', unsafe_allow_html=True)
+                                for r in bp:
+                                    st.caption(f"**{r['ticker']}** ({r['pw']:.0f}%) — {r['signal']} [{r['quality']['grade']}]")
+                                if not bp:
+                                    st.caption("—")
+                            with c2:
+                                st.markdown('<div class="ins r"><b>🔴 Reducir</b></div>', unsafe_allow_html=True)
+                                for r in sp:
+                                    st.caption(f"**{r['ticker']}** ({r['pw']:.0f}%) — {r['signal']} [{r['quality']['grade']}]")
+                                if not sp:
+                                    st.caption("—")
         else:
-            st.markdown('<div class="mt"><div class="mi">💼</div><div class="mh">Construye tu cartera</div><div class="ms">Añade tickers con pesos o usa Demo. Puedes guardar y cargar en JSON.</div></div>',unsafe_allow_html=True)
+            st.markdown('<div class="mt"><div class="mi">💼</div><div class="mh">Construye tu cartera</div><div class="ms">Añade tickers con pesos o usa Demo. Puedes guardar y cargar en JSON.</div></div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="ft">by <a href="https://bquantfinance.com" target="_blank">@Gsnchez · bquantfinance.com</a></div>',unsafe_allow_html=True)
+    st.markdown('<div class="ft">by <a href="https://bquantfinance.com" target="_blank">@Gsnchez · bquantfinance.com</a></div>', unsafe_allow_html=True)
 
-if __name__=="__main__": main()
+
+if __name__ == "__main__":
+    main()
